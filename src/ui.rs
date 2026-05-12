@@ -3,7 +3,7 @@ use std::error::Error;
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
-use ratatui::widgets::{Block, Borders, Clear, List, ListItem, Paragraph};
+use ratatui::widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap};
 
 use crate::context::*;
 use crate::expression::manager::*;
@@ -359,7 +359,9 @@ pub fn render_popups(popups: &Popups, frame: &mut Frame) {
             .borders(Borders::ALL)
             .style(Style::default().fg(popup.color));
 
-        let paragraph = Paragraph::new(popup.content.to_string()).block(block);
+        let paragraph = Paragraph::new(popup.content.to_string())
+            .block(block)
+            .wrap(Wrap { trim: true });
 
         frame.render_widget(paragraph, rect);
     }

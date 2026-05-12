@@ -728,7 +728,20 @@ impl Renderer {
 
             // handle receive
             while let Ok(msg) = context.msg_chan.1.try_recv() {
-                context.popups.push_msg(&msg);
+                let len = msg.content.len();
+                let display_width = std::cmp::min(len + 2, msg.max_width as usize);
+
+                let content_width = display_width.saturating_sub(2);
+                let row_num = 2 + (len + content_width - 1) / content_width;
+
+                let row_num = std::cmp::min(row_num, msg.max_height as usize);
+
+                context.popups.push(Popup::new(
+                    msg.content,
+                    Duration::from_secs_f64(msg.duration),
+                    (display_width, row_num),
+                    Color::Rgb(msg.color.0, msg.color.1, msg.color.2),
+                ));
             }
 
             // check popups

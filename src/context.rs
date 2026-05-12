@@ -73,7 +73,7 @@ pub struct Context {
     pub tracker: Tracker,
     pub camera: bool,
     pub receiver: Option<MsgReceiver>,
-    pub msg_chan: (Sender<String>, Receiver<String>),
+    pub msg_chan: (Sender<Msg>, Receiver<Msg>),
     pub use_physics: bool,
     pub popups: Popups,
 }

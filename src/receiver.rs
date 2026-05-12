@@ -1,3 +1,4 @@
+use std::sync::mpsc::Sender;
 use std::{
     error::Error,
     net::UdpSocket,
@@ -9,17 +10,26 @@ use std::{
     time::Duration,
 };
 
-use std::sync::mpsc::Sender;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct Msg {
+    pub content: String,
+    pub max_width: usize,
+    pub max_height: usize,
+    pub duration: f64,
+    pub color: (u8, u8, u8),
+}
 
 #[derive(Debug)]
 pub struct MsgReceiver {
     is_running: Arc<AtomicBool>,
     port: usize,
-    sender: Sender<String>,
+    sender: Sender<Msg>,
 }
 
 impl MsgReceiver {
-    pub fn new(port: usize, sender: Sender<String>) -> Self {
+    pub fn new(port: usize, sender: Sender<Msg>) -> Self {
         Self {
             is_running: Arc::new(AtomicBool::new(false)),
             port,
@@ -47,7 +57,19 @@ impl MsgReceiver {
             while is_running.load(Ordering::SeqCst) {
                 if let Ok((amt, _)) = socket.recv_from(&mut buf) {
                     if let Ok(content) = std::str::from_utf8(&buf[..amt]) {
-                        let _ = tx.send(content.to_string());
+                        let msg: Msg = if let Ok(msg) = serde_json::from_str(content) {
+                            msg
+                        } else {
+                            let content = String::from("Failed to parse message.");
+                            Msg {
+                                content: content,
+                                max_width: 20,
+                                max_height: 5,
+                                duration: 3.,
+                                color: (255, 0, 0),
+                            }
+                        };
+                        let _ = tx.send(msg);
                     }
                 }
             }

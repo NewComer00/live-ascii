@@ -10,6 +10,7 @@ pub struct Popup {
     pub position: Option<(usize, usize)>,
     pub size: (usize, usize),
     pub color: Color,
+    pub id: String,
 }
 
 impl Popup {
@@ -26,6 +27,25 @@ impl Popup {
             position: None,
             size,
             color,
+            id: String::new(),
+        }
+    }
+
+    pub fn new_with_id(
+        content: impl Into<Arc<str>>,
+        duration: Duration,
+        size: (usize, usize),
+        color: Color,
+        id: String,
+    ) -> Self {
+        Self {
+            content: content.into(),
+            duration,
+            created_at: Instant::now(),
+            position: None,
+            size,
+            color,
+            id,
         }
     }
 
@@ -75,4 +95,8 @@ impl Popups {
         ));
     }
 
+    pub fn delete(&mut self, id: impl AsRef<str>) {
+        let id = id.as_ref();
+        self.inner.retain(|p| p.id != id);
+    }
 }

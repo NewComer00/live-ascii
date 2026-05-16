@@ -19,6 +19,8 @@ pub struct Msg {
     pub max_height: usize,
     pub duration: f64,
     pub color: (u8, u8, u8),
+    pub show: bool,
+    pub id: String,
 }
 
 #[derive(Debug)]
@@ -67,6 +69,8 @@ impl MsgReceiver {
                                 max_height: 5,
                                 duration: 3.,
                                 color: (255, 0, 0),
+                                show: true,
+                                id: String::new(),
                             }
                         };
                         let _ = tx.send(msg);

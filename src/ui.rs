@@ -340,21 +340,34 @@ pub fn render_popups(popups: &Popups, frame: &mut Frame) {
     let area = frame.area();
 
     let mut offset_y = 0;
-
     for popup in &popups.inner {
         let (w, h) = popup.size;
-        let rect = if let Some((x, y)) = popup.position {
-            Rect::new(x as u16, y as u16, w as u16, h as u16)
+        
+        let (raw_x, raw_y) = if let Some((x, y)) = popup.position {
+            (x as u16, y as u16)
         } else {
             let x = area.width.saturating_sub(w as u16);
             let y = offset_y as u16;
 
             offset_y += h;
-
-            Rect::new(x, y, w as u16, h as u16)
+            (x, y)
         };
 
+        if raw_x >= area.width || raw_y >= area.height {
+            continue;
+        }
+
+        let safe_w = (w as u16).min(area.width.saturating_sub(raw_x));
+        let safe_h = (h as u16).min(area.height.saturating_sub(raw_y));
+
+        if safe_w == 0 || safe_h == 0 {
+            continue;
+        }
+
+        let rect = Rect::new(raw_x, raw_y, safe_w, safe_h);
+
         frame.render_widget(Clear, rect);
+        
         let block = Block::default()
             .borders(Borders::ALL)
             .style(Style::default().fg(popup.color));

@@ -17,6 +17,7 @@ impl ShaderManager {
             Shader::Char(Box::new([' ', '.', ':', '-', '=', '+', '*', '#', '%', '@'])),
             Shader::Text("HELLO".into()),
             Shader::Char(Box::new(['⠀', '⠁', '⠃', '⠇', '⠧', '⠷', '⠿', '⡿', '⣿'])),
+            Shader::Text("█".into()),
         ]);
         Self { shaders, idx: 0 }
     }

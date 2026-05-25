@@ -73,6 +73,15 @@ impl Popups {
         self.inner.push(popup);
     }
 
+    pub fn push_or_update(&mut self, mut popup: Popup) {
+        if let Some(old) = self.inner.iter_mut().find(|p| p.id == popup.id) {
+            popup.position = old.position;
+            *old = popup;
+        } else {
+            self.inner.push(popup);
+        }
+    }
+
     pub fn update(&mut self) {
         self.inner.retain(|p| !p.is_expired());
     }

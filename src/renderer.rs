@@ -737,7 +737,7 @@ impl Renderer {
 
                     let row_num = std::cmp::min(row_num, msg.max_height as usize);
 
-                    context.popups.push(Popup::new_with_id(
+                    context.popups.push_or_update(Popup::new_with_id(
                         msg.content,
                         Duration::from_secs_f64(msg.duration),
                         (display_width, row_num),
@@ -748,7 +748,6 @@ impl Renderer {
                     context.popups.delete(msg.id);
                 }
             }
-
             // check popups
             context.popups.update();
             let elapsed = frame_start.elapsed();

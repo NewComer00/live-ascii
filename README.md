@@ -8,9 +8,11 @@ A Live2D Cubism model renderer for terminal. It also support face tracking.
 
 | Platform | x86_64 | arm64 |
 |----------|:------:|:-----:|
-| Windows  |   ✅    |       |
+| Windows* |   ✅    |       |
 | macOS    |        |   ✅   |
 | Linux    |   ✅    |   ✅   |
+
+\* Windows support is tested on MSYS2 UCRT64.
 
 ## Usage
 

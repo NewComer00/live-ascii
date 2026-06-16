@@ -41,6 +41,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
+      - run: |
+          brew install util-linux coreutils
+          echo "/opt/homebrew/opt/util-linux/bin" >> $GITHUB_PATH
+          echo "/opt/homebrew/opt/coreutils/libexec/gnubin" >> $GITHUB_PATH
       - run: cargo build --release
       - run: cargo test --release
       - uses: actions/cache@v4
@@ -62,9 +66,9 @@ jobs:
           update: true
           install: >-
             mingw-w64-ucrt-x86_64-gcc
-            mingw-w64-ucrt-x86_64-make
             mingw-w64-ucrt-x86_64-rust
             git
+            make
             wget
             unzip
       - uses: swatinem/rust-cache@v2

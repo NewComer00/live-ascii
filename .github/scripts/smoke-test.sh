@@ -12,9 +12,10 @@ fi
 # Run smoke test — model loads, then TUI requires a terminal (which CI lacks).
 # Check that PurismCore initializes successfully regardless of exit code.
 TIMEOUT_SEC=5
+EXE=$(find target/release -maxdepth 1 \( -name "live-ascii" -o -name "live-ascii.exe" \) | head -1)
 MODEL_SETTING="$MODEL_DIR/runtime/hiyori_free_t08.model3.json"
 set +e
-OUTPUT=$(timeout --foreground $TIMEOUT_SEC cargo run --release -- "$MODEL_SETTING" 2>&1)
+OUTPUT=$(timeout $TIMEOUT_SEC "$EXE" "$MODEL_SETTING" 2>&1)
 set -e
 
 if echo "$OUTPUT" | grep -q "Purism Core version"; then

@@ -4,14 +4,19 @@ A Live2D Cubism model renderer for terminal. It also support face tracking.
 
 ![showcase](./showcase.gif)
 
-## Usage 
+## Supported Platforms
 
-You must have the Live2D Cubism SDK Core library: [Live2D Cubism SDK](https://www.live2d.com/en/sdk/about/). <br>
-Create a .env file in the project root to specify the path to the SDK directory:
-```.env
-# Example .env configuration
-CubismSDKDir=/path/to/your/CubismSDK/Core/lib
-```
+| Platform | x86_64 | arm64 |
+|----------|:------:|:-----:|
+| Windows  |   ✅   |       |
+| macOS    |   ✅   |   ✅  |
+| Linux    |   ✅   |   ✅  |
+
+## Usage
+
+Live-ASCII uses [PurismCore](https://github.com/SakuraMotion/PurismCore), an MIT-licensed reimplementation of Live2D Cubism Core (API v6). PurismCore is automatically fetched and built on first `cargo build` — no manual setup required.
+
+**Prerequisites:** `git` and `make` (and a C compiler like `cc`) must be available on your PATH.
 
 ```bash
 cargo run --release -- ./path/to/model.model3.json

@@ -1,13 +1,18 @@
-use std::ptr;
-
 use crossterm::event::{KeyCode, KeyModifiers, ModifierKeyCode};
 
 pub fn allocate_aligned(size: usize, alignment: usize) -> *mut u8 {
-    let mut ptr: *mut libc::c_void = ptr::null_mut();
-    unsafe {
-        libc::posix_memalign(&mut ptr, alignment, size);
+    #[cfg(unix)]
+    {
+        let mut ptr: *mut libc::c_void = std::ptr::null_mut();
+        unsafe {
+            libc::posix_memalign(&mut ptr, alignment, size);
+        }
+        ptr as *mut u8
     }
-    ptr as *mut u8
+    #[cfg(windows)]
+    {
+        unsafe { libc::aligned_malloc(size, alignment) as *mut u8 }
+    }
 }
 
 pub fn default_fade_time() -> f32 {

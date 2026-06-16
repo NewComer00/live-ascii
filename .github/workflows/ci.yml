@@ -7,7 +7,7 @@ on:
     branches: [master]
 
 jobs:
-  test-linux:
+  test-linux-x86_64:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,7 +20,9 @@ jobs:
         with:
           path: hiyori_free
           key: hiyori-model-v1
-      - run: bash .github/scripts/smoke-test.sh
+      - name: Smoke test
+        shell: 'script -q -e -c "bash {0}"'
+        run: bash .github/scripts/smoke-test.sh
 
   test-linux-arm64:
     runs-on: ubuntu-24.04-arm
@@ -35,7 +37,9 @@ jobs:
         with:
           path: hiyori_free
           key: hiyori-model-v1
-      - run: bash .github/scripts/smoke-test.sh
+      - name: Smoke test
+        shell: 'script -q -e -c "bash {0}"'
+        run: bash .github/scripts/smoke-test.sh
 
   test-macos-arm64:
     runs-on: macos-latest
@@ -43,29 +47,32 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
-      - run: brew install socat
+      - run: brew install socat util-linux
       - run: cargo build --release
       - run: cargo test --release
       - uses: actions/cache@v4
         with:
           path: hiyori_free
           key: hiyori-model-v1
-      - run: bash .github/scripts/smoke-test.sh
+      - name: Smoke test
+        shell: 'gscript -q -e -c "bash {0}"'
+        run: bash .github/scripts/smoke-test.sh
 
-  test-windows:
+  test-windows-x86_64:
     runs-on: windows-latest
     defaults:
       run:
         shell: msys2 {0}
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
       - uses: msys2/setup-msys2@v2
         with:
-          msystem: mingw64
+          msystem: ucrt64
+          update: true
           install: >-
-            mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-make
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-make
+            mingw-w64-ucrt-x86_64-rust
             wget
             unzip
             socat
@@ -76,4 +83,5 @@ jobs:
         with:
           path: hiyori_free
           key: hiyori-model-v1
-      - run: bash .github/scripts/smoke-test.sh
+      - name: Smoke test
+        run: bash .github/scripts/smoke-test.sh

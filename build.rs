@@ -53,7 +53,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     if !lib_file.exists() {
         println!("cargo:warning=Building PurismCore (this may take a moment)...");
-        run_command("make", &["ABI=v6", &format!("OS={}", os_arg)], &purism_dir)?;
+        run_command("make", &["static-lib", "ABI=v6", &format!("OS={}", os_arg)], &purism_dir)?;
     }
 
     println!("cargo:rustc-link-search=native={}", build_dir.display());

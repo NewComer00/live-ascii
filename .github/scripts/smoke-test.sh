@@ -14,6 +14,11 @@ fi
 TIMEOUT_SEC=5
 EXE=$(find target/release -maxdepth 1 \( -name "live-ascii" -o -name "live-ascii.exe" \) | head -1)
 MODEL_SETTING="$MODEL_DIR/runtime/hiyori_free_t08.model3.json"
+if [ -z "$EXE" ]; then
+    echo "FAIL: binary not found in target/release"
+    exit 1
+fi
+
 set +e
 OUTPUT=$(timeout $TIMEOUT_SEC "$EXE" "$MODEL_SETTING" 2>&1)
 set -e

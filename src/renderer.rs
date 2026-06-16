@@ -109,7 +109,7 @@ impl Renderer {
         let mut terminal = Terminal::new(backend)?;
         let mut shader = self.shader_manager.current_shader();
 
-        let mut text_chars: Option<Vec<char>> = if let Shader::Text(t) = shader {
+        let mut _text_chars: Option<Vec<char>> = if let Shader::Text(t) = shader {
             Some(t.chars().collect())
         } else {
             None
@@ -123,7 +123,7 @@ impl Renderer {
             pose.reset(&mut self.model);
         }
 
-        let mut mask_buffer = vec![false; (context.width as usize) * (context.height as usize)];
+        let mut mask_buffer = vec![false; (context.render_width() as usize) * (context.render_height() as usize)];
 
         let mut face_controller = FaceController::new(0.3);
 
@@ -149,8 +149,8 @@ impl Renderer {
                                 KeyCode::Down => self.offset_y -= 0.1,
                                 KeyCode::Left => self.offset_x += 0.1,
                                 KeyCode::Right => self.offset_x -= 0.1,
-                                KeyCode::Char('=') | KeyCode::Char('+') => self.scale *= 1.1,
-                                KeyCode::Char('-') => self.scale *= 0.9,
+                                KeyCode::Char('=') | KeyCode::Char('+') => self.scale = (self.scale + 1.0).round(),
+                                KeyCode::Char('-') => self.scale = (self.scale - 1.0).max(1.0).round(),
                                 _ => {}
                             },
                             Panel::Op => match context.current_op_panel {
@@ -340,7 +340,7 @@ impl Renderer {
                     ActionKind::NextShader => {
                         self.shader_manager.next();
                         shader = self.shader_manager.current_shader();
-                        text_chars = if let Shader::Text(t) = shader {
+                        _text_chars = if let Shader::Text(t) = shader {
                             Some(t.chars().collect())
                         } else {
                             None
@@ -358,7 +358,7 @@ impl Renderer {
                     ActionKind::PrevShader => {
                         self.shader_manager.prev();
                         shader = self.shader_manager.current_shader();
-                        text_chars = if let Shader::Text(t) = shader {
+                        _text_chars = if let Shader::Text(t) = shader {
                             Some(t.chars().collect())
                         } else {
                             None
@@ -426,7 +426,7 @@ impl Renderer {
             context.update()?;
 
             context.clear();
-            let needed = (context.width as usize) * (context.height as usize);
+            let needed = (context.render_width() as usize) * (context.render_height() as usize);
             if mask_buffer.len() != needed {
                 mask_buffer.resize(needed, false);
             }
@@ -515,26 +515,26 @@ impl Renderer {
 
                                 let v0 = self.transform_to_screen(
                                     *m_vertices_ptr.add(i0),
-                                    context.width,
-                                    context.height,
+                                    context.render_width(),
+                                    context.render_height(),
                                 );
                                 let v1 = self.transform_to_screen(
                                     *m_vertices_ptr.add(i1),
-                                    context.width,
-                                    context.height,
+                                    context.render_width(),
+                                    context.render_height(),
                                 );
                                 let v2 = self.transform_to_screen(
                                     *m_vertices_ptr.add(i2),
-                                    context.width,
-                                    context.height,
+                                    context.render_width(),
+                                    context.render_height(),
                                 );
 
                                 let triangle = Triangle::new(v0, v1, v2);
                                 let bbox = triangle.get_box();
                                 let min_x = bbox.minx.max(0.0) as u16;
-                                let max_x = bbox.maxx.min((context.width - 1) as f32) as u16;
+                                let max_x = bbox.maxx.min((context.render_width() - 1) as f32) as u16;
                                 let min_y = bbox.miny.max(0.0) as u16;
-                                let max_y = bbox.maxy.min((context.height - 1) as f32) as u16;
+                                let max_y = bbox.maxy.min((context.render_height() - 1) as f32) as u16;
 
                                 let total_area = triangle.signed_area();
                                 if total_area == 0.0 {
@@ -555,7 +555,7 @@ impl Renderer {
                                         let w2 = 1.0 - w0 - w1;
 
                                         if w0 >= 0.0 && w1 >= 0.0 && w2 >= 0.0 {
-                                            mask_buffer[(y as usize) * (context.width as usize)
+                                            mask_buffer[(y as usize) * (context.render_width() as usize)
                                                 + (x as usize)] = true;
                                         }
                                     }
@@ -585,18 +585,18 @@ impl Renderer {
 
                         let v0 = self.transform_to_screen(
                             *vertices_ptr.add(i0),
-                            context.width,
-                            context.height,
+                            context.render_width(),
+                            context.render_height(),
                         );
                         let v1 = self.transform_to_screen(
                             *vertices_ptr.add(i1),
-                            context.width,
-                            context.height,
+                            context.render_width(),
+                            context.render_height(),
                         );
                         let v2 = self.transform_to_screen(
                             *vertices_ptr.add(i2),
-                            context.width,
-                            context.height,
+                            context.render_width(),
+                            context.render_height(),
                         );
 
                         let triangle = Triangle::new(v0, v1, v2);
@@ -604,9 +604,9 @@ impl Renderer {
                         // get bounding box
                         let bbox = triangle.get_box();
                         let min_x = bbox.minx.max(0.0) as u16;
-                        let max_x = bbox.maxx.min((context.width - 1) as f32) as u16;
+                        let max_x = bbox.maxx.min((context.render_width() - 1) as f32) as u16;
                         let min_y = bbox.miny.max(0.0) as u16;
-                        let max_y = bbox.maxy.min((context.height - 1) as f32) as u16;
+                        let max_y = bbox.maxy.min((context.render_height() - 1) as f32) as u16;
 
                         let total_area = triangle.signed_area();
                         if total_area == 0.0 {
@@ -617,7 +617,7 @@ impl Renderer {
                             for x in min_x..=max_x {
                                 if has_mask
                                     && !mask_buffer
-                                        [(y as usize) * (context.width as usize) + (x as usize)]
+                                        [(y as usize) * (context.render_width() as usize) + (x as usize)]
                                 {
                                     continue;
                                 }
@@ -644,70 +644,15 @@ impl Renderer {
                                     let tex_y = ((1.0 - v) * (img_h as f32 - 1.0)) as u32;
 
                                     if tex_x < img_w && tex_y < img_h {
-                                        let fx = u * (img_w as f32 - 1.0);
-                                        let fy = (1.0 - v) * (img_h as f32 - 1.0);
-
-                                        let x0 = fx.floor() as u32;
-                                        let y0 = fy.floor() as u32;
-                                        let x1 = (x0 + 1).min(img_w - 1);
-                                        let y1 = (y0 + 1).min(img_h - 1);
-
-                                        let tx = fx - x0 as f32;
-                                        let ty = fy - y0 as f32;
-
-                                        let p00 = current_texture.get_pixel(x0, y0);
-                                        let p10 = current_texture.get_pixel(x1, y0);
-                                        let p01 = current_texture.get_pixel(x0, y1);
-                                        let p11 = current_texture.get_pixel(x1, y1);
-
-                                        // TODO: add to math.rs
-                                        let lerp = |a: f32, b: f32, t: f32| a * (1.0 - t) + b * t;
-
-                                        let r0 = lerp(p00[0] as f32, p10[0] as f32, tx);
-                                        let r1 = lerp(p01[0] as f32, p11[0] as f32, tx);
-                                        let r = lerp(r0, r1, ty) as u8;
-
-                                        let g0 = lerp(p00[1] as f32, p10[1] as f32, tx);
-                                        let g1 = lerp(p01[1] as f32, p11[1] as f32, tx);
-                                        let g = lerp(g0, g1, ty) as u8;
-
-                                        let b0 = lerp(p00[2] as f32, p10[2] as f32, tx);
-                                        let b1 = lerp(p01[2] as f32, p11[2] as f32, tx);
-                                        let b = lerp(b0, b1, ty) as u8;
-
-                                        let a0 = lerp(p00[3] as f32, p10[3] as f32, tx);
-                                        let a1 = lerp(p01[3] as f32, p11[3] as f32, tx);
-                                        let a = lerp(a0, a1, ty) as u8;
+                                        let p = current_texture.get_pixel(tex_x, tex_y);
+                                        let r = p[0];
+                                        let g = p[1];
+                                        let b = p[2];
+                                        let a = p[3];
                                         if a > 0 {
                                             let final_alpha = (a as f32 / 255.0) * opacity;
                                             if final_alpha > 0.1 {
-                                                let display_char = match shader {
-                                                    Shader::Char(chars) => {
-                                                        let luminance = 0.299 * (r as f32)
-                                                            + 0.587 * (g as f32)
-                                                            + 0.114 * (b as f32);
-
-                                                        let char_index = (luminance / 255.0
-                                                            * (chars.len() - 1) as f32)
-                                                            .round()
-                                                            as usize;
-                                                        let char_index =
-                                                            char_index.clamp(0, chars.len() - 1);
-                                                        chars[char_index]
-                                                    }
-                                                    Shader::Text(_) => {
-                                                        if let Some(ref chars) = text_chars {
-                                                            let text_idx = (y as usize
-                                                                * context.width as usize
-                                                                + x as usize)
-                                                                % chars.len();
-                                                            chars[text_idx]
-                                                        } else {
-                                                            ' '
-                                                        }
-                                                    }
-                                                };
-                                                context.set_pixel(x, y, display_char, (r, g, b));
+                                                context.set_pixel_color(x, y, r, g, b);
                                             }
                                         }
                                     }
@@ -719,12 +664,21 @@ impl Renderer {
             }
 
             // draw ui
-            terminal.draw(|f| match ui(f, context, &self.model, &mm, &em) {
-                Ok(_) => {}
-                Err(e) => {
-                    println!("{:?}", e);
-                }
-            })?;
+            if context.sixel {
+                let sixel_data = context.buffer_to_sixel();
+                let mut stdout = stdout();
+                use std::io::Write;
+                execute!(stdout, cursor::MoveTo(0, 0))?;
+                stdout.write_all(&sixel_data)?;
+                stdout.flush()?;
+            } else {
+                terminal.draw(|f| match ui(f, context, &self.model, &mm, &em) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        println!("{:?}", e);
+                    }
+                })?;
+            }
 
             // handle receive
             while let Ok(msg) = context.msg_chan.1.try_recv() {
@@ -765,7 +719,7 @@ impl Renderer {
         let w = width as f32;
         let h = height as f32;
 
-        let font_aspect_ratio = 0.5;
+        let font_aspect_ratio = 1.0;
 
         let scale_x = w / 2.0;
         let scale_y = (h / font_aspect_ratio) / 2.0;

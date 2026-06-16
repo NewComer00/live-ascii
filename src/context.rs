@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::error::Error;
-use std::io::stdout;
 use std::sync::{
     Arc,
     mpsc::{Sender, Receiver, channel}
@@ -8,11 +7,7 @@ use std::sync::{
 
 use ratatui::widgets::ListState;
 
-use crossterm::{
-    QueueableCommand, cursor, queue,
-    style::{Color, PrintStyledContent, Stylize},
-    terminal,
-};
+use crossterm::terminal;
 use ratatui::style::{Color as RatatuiColor, Style};
 use ratatui::text::{Line, Span, Text};
 
@@ -34,7 +29,7 @@ pub enum DebugPanel {
     Parameters,
     PartOpacities,
     AppliedExp,
-    ActionQueue, 
+    ActionQueue,
     Camera,
     Manager,
 }
@@ -51,8 +46,8 @@ pub enum Panel {
 pub struct Context {
     pub width: u16,
     pub height: u16,
-    // RGB
-    pub frame_buffer: Vec<(char, (u8, u8, u8))>,
+    // Per-pixel color buffer at width × (height * 2) resolution
+    pub pixel_buffer: Vec<(u8, u8, u8)>,
     pub image: bool,
     pub base_dir: Arc<str>,
     pub model_setting: ModelSetting,
@@ -76,14 +71,30 @@ pub struct Context {
     pub msg_chan: (Sender<Msg>, Receiver<Msg>),
     pub use_physics: bool,
     pub popups: Popups,
+    pub sixel: bool,
 }
 
 impl Context {
+    pub fn pixel_height(&self) -> u16 {
+        self.height * 2
+    }
+
+    /// Width in pixels for rasterization target.
+    /// Sixel mode scales to terminal pixel size; half-block uses terminal cells × 1.
+    pub fn render_width(&self) -> u16 {
+        if self.sixel { self.width * 10 } else { self.width }
+    }
+
+    /// Height in pixels for rasterization target.
+    pub fn render_height(&self) -> u16 {
+        if self.sixel { self.height * 20 } else { self.pixel_height() }
+    }
+
     pub fn new(image: bool, model_setting: ModelSetting, base_dir: &str, camera: bool, tracker: Tracker) -> Self {
         Self {
             width: 0,
             height: 0,
-            frame_buffer: vec![],
+            pixel_buffer: vec![],
             image,
             base_dir: base_dir.into(),
             model_setting,
@@ -99,10 +110,11 @@ impl Context {
             active_expressions: HashMap::new(),
             tracker,
             camera,
-            receiver: None, 
+            receiver: None,
             msg_chan: channel(),
             use_physics: false,
             popups: Popups::new(),
+            sixel: false,
         }
     }
 
@@ -110,45 +122,13 @@ impl Context {
         self.live_setting = Some(live);
     }
 
-    pub fn set_pixel(&mut self, x: u16, y: u16, ch: char, color: (u8, u8, u8)) {
-        if x < self.width && y < self.height {
-            let idx = x + y * self.width;
-            self.frame_buffer[idx as usize] = (ch, color);
+    pub fn set_pixel_color(&mut self, x: u16, y: u16, r: u8, g: u8, b: u8) {
+        let rw = self.render_width();
+        let rh = self.render_height();
+        if x < rw && y < rh {
+            let idx = (y as usize) * (rw as usize) + (x as usize);
+            self.pixel_buffer[idx] = (r, g, b);
         }
-    }
-
-    pub fn flush(&self, color: bool) -> Result<(), Box<dyn Error>> {
-        let mut stdout = stdout();
-
-        if !self.image {
-            stdout.queue(cursor::MoveTo(0, 0))?;
-        }
-
-        match color {
-            false => {
-                let frame: String = self.frame_buffer.iter().map(|pixel| pixel.0).collect();
-                println!("{}", frame);
-            }
-            true => {
-                for pixel in &self.frame_buffer {
-                    let styled = pixel
-                        .0
-                        .with(Color::Rgb {
-                            r: (pixel.1).0,
-                            g: (pixel.1).1,
-                            b: (pixel.1).2,
-                        })
-                        .on(Color::Rgb {
-                            r: 10,
-                            g: 10,
-                            b: 10,
-                        });
-                    queue!(stdout, PrintStyledContent(styled))?;
-                }
-            }
-        }
-
-        Ok(())
     }
 
     pub fn update(&mut self) -> Result<(), Box<dyn Error>> {
@@ -156,33 +136,61 @@ impl Context {
         if self.width != tw || self.height != th {
             self.width = tw;
             self.height = th;
-            self.frame_buffer
-                .resize((tw * th) as usize, (' ', (0, 0, 0)));
+        }
+        let rw = self.render_width() as usize;
+        let rh = self.render_height() as usize;
+        if self.pixel_buffer.len() != rw * rh {
+            self.pixel_buffer.resize(rw * rh, (0, 0, 0));
         }
         Ok(())
     }
 
     pub fn clear(&mut self) {
-        self.frame_buffer.fill((' ', (0, 0, 0)));
+        self.pixel_buffer.fill((0, 0, 0));
     }
 
     pub fn buffer_to_text(&self) -> Text<'static> {
+        let ph = self.pixel_height() as usize;
+        let w = self.width as usize;
         let mut lines = Vec::with_capacity(self.height as usize);
 
-        for y in 0..self.height {
-            let mut spans = Vec::with_capacity(self.width as usize);
-            for x in 0..self.width {
-                let idx = (y * self.width + x) as usize;
-                if let Some((ch, (r, g, b))) = self.frame_buffer.get(idx) {
-                    spans.push(Span::styled(
-                        ch.to_string(),
-                        Style::default().fg(RatatuiColor::Rgb(*r, *g, *b)),
-                    ));
-                }
+        for cell_y in 0..self.height as usize {
+            let top_row = cell_y * 2;
+            let bot_row = top_row + 1;
+            let mut spans = Vec::with_capacity(w);
+            for x in 0..w {
+                let top_idx = top_row * w + x;
+                let (tr, tg, tb) = self.pixel_buffer.get(top_idx).copied().unwrap_or((0, 0, 0));
+                let (br, bg, bb) = if bot_row < ph {
+                    self.pixel_buffer.get(bot_row * w + x).copied().unwrap_or((0, 0, 0))
+                } else {
+                    (0, 0, 0)
+                };
+                spans.push(Span::styled(
+                    "▀".to_string(),
+                    Style::default()
+                        .fg(RatatuiColor::Rgb(tr, tg, tb))
+                        .bg(RatatuiColor::Rgb(br, bg, bb)),
+                ));
             }
             lines.push(Line::from(spans));
         }
         Text::from(lines)
+    }
+
+    pub fn buffer_to_sixel(&self) -> Vec<u8> {
+        let w = self.render_width() as usize;
+        let h = self.render_height() as usize;
+        let mut rgba: Vec<u8> = Vec::with_capacity(w * h * 4);
+        for i in 0..self.pixel_buffer.len() {
+            let (r, g, b) = self.pixel_buffer[i];
+            rgba.extend_from_slice(&[r, g, b, 255]);
+        }
+        icy_sixel::SixelImage::try_from_rgba(rgba, w, h)
+            .ok()
+            .and_then(|img| img.encode().ok())
+            .unwrap_or_default()
+            .into_bytes()
     }
 
     pub fn get_active_expressions(&self) -> Vec<&str> {

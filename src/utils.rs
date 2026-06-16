@@ -1,4 +1,5 @@
 use crossterm::event::{KeyCode, KeyModifiers, ModifierKeyCode};
+use image::RgbaImage;
 
 pub fn allocate_aligned(size: usize, alignment: usize) -> *mut u8 {
     #[cfg(unix)]
@@ -84,6 +85,44 @@ pub fn modifiers_to_vec(modifiers: KeyModifiers) -> Vec<String> {
 
 pub fn get_file_name(filename: &str) -> &str {
     filename.split('.').next().unwrap_or(filename)
+}
+
+/// Boost contrast along edges so fine details survive
+/// when the texture is rendered at low terminal resolutions.
+/// Uses a 3×3 Laplace kernel for edge detection, then brightens
+/// edge pixels and darkens their neighbours (outline expansion).
+pub fn enhance_edges(img: &RgbaImage) -> RgbaImage {
+    let (w, h) = img.dimensions();
+    let mut out = img.clone();
+
+    for y in 1..h.saturating_sub(1) {
+        for x in 1..w.saturating_sub(1) {
+            // Laplace kernel: detect edges via 2nd derivative of luminance
+            let luminance = |px: u32, py: u32| -> f32 {
+                let p = img.get_pixel(px, py);
+                0.299 * p[0] as f32 + 0.587 * p[1] as f32 + 0.114 * p[2] as f32
+            };
+
+            let edge = (4.0 * luminance(x, y)
+                - luminance(x - 1, y)
+                - luminance(x + 1, y)
+                - luminance(x, y - 1)
+                - luminance(x, y + 1))
+                .abs();
+
+            // Only enhance significant edges (skip noise)
+            if edge > 30.0 {
+                let boost = (edge / 255.0 * 0.6).min(0.5);
+                let p = img.get_pixel(x, y);
+                let r = (p[0] as f32 * (1.0 + boost)).min(255.0) as u8;
+                let g = (p[1] as f32 * (1.0 + boost)).min(255.0) as u8;
+                let b = (p[2] as f32 * (1.0 + boost)).min(255.0) as u8;
+                out.put_pixel(x, y, image::Rgba([r, g, b, p[3]]));
+            }
+        }
+    }
+
+    out
 }
 
 #[cfg(test)]

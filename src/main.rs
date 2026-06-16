@@ -28,6 +28,8 @@ struct Args {
     camera: bool,
     #[arg(short, long)]
     text_shader: Option<String>, // file path
+    #[arg(long)]
+    sixel: bool,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -81,7 +83,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         let full_path = base_dir.join(relative_path);
         if full_path.is_file() {
             let texture = image::open(&full_path)?.to_rgba8();
-            textures.push(image::DynamicImage::ImageRgba8(texture));
+            let enhanced = live_ascii::utils::enhance_edges(&texture);
+            textures.push(image::DynamicImage::ImageRgba8(enhanced));
         }
     }
     // initalize tracker
@@ -95,6 +98,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         args.camera,
         tracker,
     );
+    context.sixel = args.sixel;
 
     let mut shader_manager = ShaderManager::new();
     if let Some(path) = &args.text_shader {

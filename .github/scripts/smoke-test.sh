@@ -10,9 +10,10 @@ if [ ! -d "$MODEL_DIR" ]; then
 fi
 
 # Run smoke test — the binary enters a TUI loop after loading the model.
-# timeout kills it and returns 124 (Linux/macOS) or 143 (Windows MSYS2).
+# timeout kills it and returns 124
+TIMEOUT_SEC=5
 set +e
-timeout 10 cargo run --release -- "$MODEL_DIR/runtime/hiyori_free_t08.model3.json"
+timeout --foreground $TIMEOUT_SEC socat -T $TIMEOUT_SEC - EXEC:"cargo run --release -- '$MODEL_DIR/runtime/hiyori_free_t08.model3.json'",pty,setsid,ctty
 EXIT_CODE=$?
 set -e
 

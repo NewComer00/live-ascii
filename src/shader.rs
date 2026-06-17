@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
 
+#[derive(Clone)]
 pub enum Shader {
     Text(Arc<str>),
     Char(Box<[char]>),

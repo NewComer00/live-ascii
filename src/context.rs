@@ -72,6 +72,7 @@ pub struct Context {
     pub use_physics: bool,
     pub popups: Popups,
     pub sixel: bool,
+    pub mouse: bool,
 }
 
 impl Context {
@@ -115,6 +116,7 @@ impl Context {
             use_physics: false,
             popups: Popups::new(),
             sixel: false,
+            mouse: false,
         }
     }
 

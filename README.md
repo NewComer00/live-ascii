@@ -29,11 +29,34 @@ You can download and try Live2D sample model [here](https://www.live2d.com/en/le
 ```bash
 # Run with camera tracking enabled
 cargo run --release -- ./path/to/model.model3.json --camera
+
+# Run with mouse support (drag to pan, scroll to zoom)
+cargo run --release -- ./path/to/model.model3.json --mouse
+
+# Run with both
+cargo run --release -- ./path/to/model.model3.json --camera --mouse
 ```
 
 Note: *For face tracking, ensure [OpenSeeFace](https://github.com/emilianavt/OpenSeeFace) is running and sending data to the default UDP port (11573).*
+
 ## Basic Operations
-The arrow keys are used for moving the camera, and the `+` `-` keys are used for zooming in and out.
+
+**Keyboard:**
+
+| Key | Action |
+|-----|--------|
+| `↑` `↓` `←` `→` | Move the character |
+| `+` / `=` | Zoom in |
+| `-` | Zoom out |
+| `q` | Quit |
+
+**Mouse** (pass `--mouse` to enable):
+
+| Gesture | Action |
+|---------|--------|
+| Drag | Move the character |
+| Scroll up | Zoom in |
+| Scroll down | Zoom out |
 
 ## Interactions
 

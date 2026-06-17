@@ -30,6 +30,8 @@ struct Args {
     text_shader: Option<String>, // file path
     #[arg(long)]
     sixel: bool,
+    #[arg(long)]
+    mouse: bool,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -99,6 +101,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         tracker,
     );
     context.sixel = args.sixel;
+    context.mouse = args.mouse;
 
     let mut shader_manager = ShaderManager::new();
     if let Some(path) = &args.text_shader {

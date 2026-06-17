@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use crossterm::{
     cursor,
-    event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
+    event::{self, EnableMouseCapture, DisableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind, MouseEvent, MouseEventKind},
     execute,
     terminal::{self},
 };
@@ -110,6 +110,9 @@ impl Renderer {
         // terminal
         let backend = CrosstermBackend::new(stdout());
         let mut terminal = Terminal::new(backend)?;
+        if context.mouse {
+            execute!(stdout(), EnableMouseCapture)?;
+        }
         let mut shader = self.shader_manager.current_shader();
 
         let mut _text_chars: Option<Vec<char>> = if let Shader::Text(t) = shader {
@@ -129,31 +132,35 @@ impl Renderer {
         let mut mask_buffer = vec![false; (context.render_width() as usize) * (context.render_height() as usize)];
 
         let mut face_controller = FaceController::new(0.3);
+        let mut last_mouse: Option<(u16, u16, f32, f32)> = None;
 
         loop {
             let frame_start = Instant::now();
 
             if event::poll(Duration::from_millis(1))? {
-                if let Event::Key(KeyEvent {
-                    code,
-                    modifiers,
-                    kind,
-                    ..
-                }) = event::read()?
-                {
-                    if kind == KeyEventKind::Press {
+                match event::read()? {
+                    Event::Key(KeyEvent {
+                        code,
+                        modifiers,
+                        kind,
+                        ..
+                    }) =>  if kind == KeyEventKind::Press {
                         let key_str = key_code_to_str(code);
                         let mods = modifiers_to_vec(modifiers);
 
                         match context.current_panel {
                             Panel::None => match code {
                                 KeyCode::Char('q') => break,
-                                KeyCode::Up => self.offset_y += 0.1,
-                                KeyCode::Down => self.offset_y -= 0.1,
-                                KeyCode::Left => self.offset_x += 0.1,
-                                KeyCode::Right => self.offset_x -= 0.1,
-                                KeyCode::Char('=') | KeyCode::Char('+') => self.scale = (self.scale + 1.0).round(),
-                                KeyCode::Char('-') => self.scale = (self.scale - 1.0).max(1.0).round(),
+                                KeyCode::Up => self.offset_y -= 0.1,
+                                KeyCode::Down => self.offset_y += 0.1,
+                                KeyCode::Left => self.offset_x -= 0.1,
+                                KeyCode::Right => self.offset_x += 0.1,
+                                KeyCode::Char('=') | KeyCode::Char('+') => {
+                                    self.scale = (self.scale + 0.5).min(10.0);
+                                }
+                                KeyCode::Char('-') => {
+                                    self.scale = (self.scale - 0.5).max(0.5);
+                                }
                                 _ => {}
                             },
                             Panel::Op => match context.current_op_panel {
@@ -245,6 +252,35 @@ impl Renderer {
                             live.handle_hotkeys(key_str, mods, &mut context.action_queue);
                         }
                     }
+                    Event::Mouse(MouseEvent { kind, column, row, .. }) if context.mouse => {
+                        match kind {
+                            MouseEventKind::Down(_) => {
+                                // Snapshot: grab position + current offset
+                                last_mouse = Some((column, row, self.offset_x, self.offset_y));
+                            }
+                            MouseEventKind::Drag(_) => {
+                                if let Some((gx, gy, init_ox, init_oy)) = last_mouse {
+                                    let dx = column as i32 - gx as i32;
+                                    let dy = row as i32 - gy as i32;
+                                    let w = context.width as f32;
+                                    let h = context.height as f32;
+                                    self.offset_x = init_ox + dx as f32 / w;
+                                    self.offset_y = init_oy + dy as f32 / h;
+                                }
+                            }
+                            MouseEventKind::Up(_) => {
+                                last_mouse = None;
+                            }
+                            MouseEventKind::ScrollUp => {
+                                self.scale = (self.scale + 0.5).max(1.0);
+                            }
+                            MouseEventKind::ScrollDown => {
+                                self.scale = (self.scale - 0.5).max(0.5);
+                            }
+                            _ => {}
+                        }
+                    }
+                    _ => {}
                 }
             }
 
@@ -772,6 +808,9 @@ impl Renderer {
             if elapsed < target_frame_time {
                 std::thread::sleep(target_frame_time - elapsed);
             }
+        }
+        if context.mouse {
+            execute!(stdout(), DisableMouseCapture)?;
         }
         execute!(stdout(), cursor::Show)?;
         terminal::disable_raw_mode()?;

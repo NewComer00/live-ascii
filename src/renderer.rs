@@ -668,8 +668,14 @@ impl Renderer {
                 let sixel_data = context.buffer_to_sixel();
                 let mut stdout = stdout();
                 use std::io::Write;
-                execute!(stdout, cursor::MoveTo(0, 0))?;
+                // DECSDM (mode 80): disable sixel scrolling.
+                // The image stays at cursor position without pushing content.
+                stdout.write_all(b"\x1b[?80h")?;
+                stdout.write_all(b"\x1b[H")?;
                 stdout.write_all(&sixel_data)?;
+                stdout.flush()?;
+                // Restore sixel scrolling mode (default)
+                stdout.write_all(b"\x1b[?80l")?;
                 stdout.flush()?;
             } else {
                 terminal.draw(|f| match ui(f, context, &self.model, &mm, &em) {

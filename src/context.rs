@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::{
@@ -16,6 +17,17 @@ use crate::tracker::*;
 use crate::model_setting::ModelSetting;
 use crate::ui::popup::*;
 use crate::receiver::*;
+
+/// Global atomic counter for Kitty image IDs, preventing too many resident images in the terminal.
+static KITTY_IMAGE_ID: AtomicU32 = AtomicU32::new(1);
+
+/// Supported image output protocol.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ImageProtocol {
+    HalfBlock,
+    Sixel,
+    Kitty,
+}
 
 #[derive(Debug)]
 pub enum OpPanel {
@@ -71,7 +83,7 @@ pub struct Context {
     pub msg_chan: (Sender<Msg>, Receiver<Msg>),
     pub use_physics: bool,
     pub popups: Popups,
-    pub sixel: bool,
+    pub image_protocol: ImageProtocol,
     pub mouse: bool,
 }
 
@@ -81,14 +93,29 @@ impl Context {
     }
 
     /// Width in pixels for rasterization target.
-    /// Sixel mode scales to terminal pixel size; half-block uses terminal cells × 1.
+    /// Sixel / Kitty modes scale to terminal pixel size (10 px/cell);
+    /// half-block uses terminal cells × 1.
     pub fn render_width(&self) -> u16 {
-        if self.sixel { self.width * 10 } else { self.width }
+        if self.image_protocol == ImageProtocol::Sixel
+            || self.image_protocol == ImageProtocol::Kitty
+        {
+            self.width * 10
+        } else {
+            self.width
+        }
     }
 
     /// Height in pixels for rasterization target.
+    /// Sixel / Kitty modes scale to terminal pixel size (20 px/cell);
+    /// half-block uses cells × 2.
     pub fn render_height(&self) -> u16 {
-        if self.sixel { self.height * 20 } else { self.pixel_height() }
+        if self.image_protocol == ImageProtocol::Sixel
+            || self.image_protocol == ImageProtocol::Kitty
+        {
+            self.height * 20
+        } else {
+            self.pixel_height()
+        }
     }
 
     pub fn new(image: bool, model_setting: ModelSetting, base_dir: &str, camera: bool, tracker: Tracker) -> Self {
@@ -115,7 +142,7 @@ impl Context {
             msg_chan: channel(),
             use_physics: false,
             popups: Popups::new(),
-            sixel: false,
+            image_protocol: ImageProtocol::HalfBlock,
             mouse: false,
         }
     }
@@ -204,6 +231,41 @@ impl Context {
             .and_then(|img| img.encode().ok())
             .unwrap_or_default()
             .into_bytes()
+    }
+
+    pub fn buffer_to_kitty(&self) -> Vec<u8> {
+        use kitty_graphics_protocol::{Command, Action, ImageFormat};
+
+        let prev_id = KITTY_IMAGE_ID.load(Ordering::Relaxed);
+        let curr_id = if prev_id >= 255 { 1 } else { prev_id + 1 };
+        KITTY_IMAGE_ID.store(curr_id, Ordering::Relaxed);
+
+        let w = self.render_width() as u32;
+        let h = self.render_height() as u32;
+        let mut rgba = Vec::with_capacity((w * h * 4) as usize);
+        for (r, g, b) in &self.pixel_buffer {
+            rgba.extend_from_slice(&[*r, *g, *b, 255]);
+        }
+
+        let cmd = Command::builder()
+            .action(Action::TransmitAndDisplay)
+            .format(ImageFormat::Rgba)
+            .dimensions(w, h)
+            .display_area(self.width as u32, self.height as u32)
+            .image_id(curr_id)
+            .quiet(2)
+            .build();
+
+        let mut out: Vec<u8> = cmd.serialize_chunked(&rgba)
+            .map(|chunks| chunks.flat_map(|s| s.into_bytes()).collect())
+            .unwrap_or_default();
+
+        // delete PREVIOUS id after new frame is already in the sequence
+        if let Ok(del) = Command::delete_by_id(prev_id).serialize(&[]) {
+            out.extend(del.into_bytes());
+        }
+
+        out
     }
 
     pub fn get_active_expressions(&self) -> Vec<&str> {

@@ -303,22 +303,35 @@ impl Renderer {
             }
 
             // ── Output ───────────────────────────────────────────────────────
-            if context.sixel {
-                let sixel_data = context.buffer_to_sixel();
-                let mut stdout = stdout();
-                use std::io::Write;
-                stdout.write_all(b"\x1b[?80h")?; // DECSDM: no-scroll
-                stdout.write_all(b"\x1b[H")?;
-                stdout.write_all(&sixel_data)?;
-                stdout.flush()?;
-                stdout.write_all(b"\x1b[?80l")?; // restore
-                stdout.flush()?;
-            } else {
-                terminal.draw(|f| {
-                    if let Err(e) = ui(f, context, &self.model, &mm, &em) {
-                        eprintln!("{:?}", e);
+            match context.image_protocol {
+                ImageProtocol::Sixel => {
+                    let sixel_data = context.buffer_to_sixel();
+                    let mut stdout = stdout();
+                    use std::io::Write;
+                    stdout.write_all(b"\x1b[?80h")?; // DECSDM: no-scroll
+                    stdout.write_all(b"\x1b[H")?;
+                    stdout.write_all(&sixel_data)?;
+                    stdout.flush()?;
+                    stdout.write_all(b"\x1b[?80l")?; // restore
+                    stdout.flush()?;
+                }
+                ImageProtocol::Kitty => {
+                    let kitty_data = context.buffer_to_kitty();
+                    if !kitty_data.is_empty() {
+                        let mut stdout = stdout();
+                        use std::io::Write;
+                        stdout.write_all(b"\x1b[H")?;
+                        stdout.write_all(&kitty_data)?;
+                        stdout.flush()?;
                     }
-                })?;
+                }
+                ImageProtocol::HalfBlock => {
+                    terminal.draw(|f| {
+                        if let Err(e) = ui(f, context, &self.model, &mm, &em) {
+                            eprintln!("{:?}", e);
+                        }
+                    })?;
+                }
             }
 
             // ── Post-frame ───────────────────────────────────────────────────

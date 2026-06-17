@@ -28,8 +28,9 @@ struct Args {
     camera: bool,
     #[arg(short, long)]
     text_shader: Option<String>, // file path
-    #[arg(long)]
-    sixel: bool,
+    /// Image output protocol: "halfblock" (default), "sixel", "kitty"
+    #[arg(long, default_value = "halfblock")]
+    image_protocol: String,
     #[arg(long)]
     mouse: bool,
 }
@@ -100,7 +101,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         args.camera,
         tracker,
     );
-    context.sixel = args.sixel;
+    context.image_protocol = match args.image_protocol.to_lowercase().as_str() {
+        "sixel" => ImageProtocol::Sixel,
+        "kitty" => ImageProtocol::Kitty,
+        _ => ImageProtocol::HalfBlock,
+    };
     context.mouse = args.mouse;
 
     let mut shader_manager = ShaderManager::new();

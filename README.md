@@ -33,9 +33,23 @@ cargo run --release -- ./path/to/model.model3.json --camera
 # Run with mouse support (drag to pan, scroll to zoom)
 cargo run --release -- ./path/to/model.model3.json --mouse
 
-# Run with both
-cargo run --release -- ./path/to/model.model3.json --camera --mouse
+# Run with Kitty graphics protocol
+cargo run --release -- ./path/to/model.model3.json --image-protocol kitty
+
+# Run with Sixel graphics protocol
+cargo run --release -- ./path/to/model.model3.json --image-protocol sixel
+
+# Combine flags
+cargo run --release -- ./path/to/model.model3.json --camera --mouse --image-protocol kitty
 ```
+
+`--image-protocol` values:
+
+| Value | Description |
+|-------|-------------|
+| `halfblock` (default) | Unicode half-block characters — works in any terminal |
+| `sixel` | Sixel graphics — needs a Sixel-capable terminal (xterm -ti 340, foot, WezTerm) |
+| `kitty` | Kitty graphics protocol — Kitty, Konsole ≥ 23.04, WezTerm, Ghostty |
 
 Note: *For face tracking, ensure [OpenSeeFace](https://github.com/emilianavt/OpenSeeFace) is running and sending data to the default UDP port (11573).*
 
@@ -54,7 +68,7 @@ Note: *For face tracking, ensure [OpenSeeFace](https://github.com/emilianavt/Ope
 
 | Gesture | Action |
 |---------|--------|
-| Drag | Move the character |
+| Drag | Pan the view |
 | Scroll up | Zoom in |
 | Scroll down | Zoom out |
 

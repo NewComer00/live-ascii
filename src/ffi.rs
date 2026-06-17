@@ -347,6 +347,10 @@ unsafe extern "C" {
     /// Gets drawable's parent part indices.
     pub fn csmGetDrawableParentPartIndices(model: *const CsmModel) -> *const i32;
 
+    /// Gets drawable blend modes per drawable. (v6 only).
+    /// Low byte = color blend type, next byte = alpha blend type.
+    pub fn csmGetDrawableBlendModes(model: *const CsmModel) -> *const i32;
+
     /// Resets all dynamic drawable flags.
     pub fn csmResetDrawableDynamicFlags(model: *mut CsmModel);
 }

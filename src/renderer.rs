@@ -53,6 +53,7 @@ pub struct Renderer {
     masks: *const *const i32,
 
     textures: Vec<DynamicImage>,
+    blend_modes: *const i32,
     offset_x: f32,
     offset_y: f32,
     scale: f32,
@@ -83,6 +84,8 @@ impl Renderer {
 
                 mask_counts: csmGetDrawableMaskCounts(model_ptr),
                 masks: csmGetDrawableMasks(model_ptr),
+
+                blend_modes: csmGetDrawableBlendModes(model_ptr),
 
                 textures,
                 offset_x: 0.,
@@ -474,6 +477,7 @@ impl Renderer {
 
                 self.multiply_colors = csmGetDrawableMultiplyColors(self.model.model);
                 self.screen_colors = csmGetDrawableScreenColors(self.model.model);
+                self.blend_modes = csmGetDrawableBlendModes(self.model.model);
 
                 (dy_flags, opacities, vt_positions, render_orders)
             };
@@ -651,8 +655,62 @@ impl Renderer {
                                         let a = p[3];
                                         if a > 0 {
                                             let final_alpha = (a as f32 / 255.0) * opacity;
-                                            if final_alpha > 0.1 {
-                                                context.set_pixel_color(x, y, r, g, b);
+                                            if final_alpha > 0.004 {
+                                                // Read current destination pixel
+                                                let (dr, dg, db) = context.get_pixel_color(x, y);
+                                                let src_r = r as f32 / 255.0;
+                                                let src_g = g as f32 / 255.0;
+                                                let src_b = b as f32 / 255.0;
+
+                                                // Multiply color (tint)
+                                                let mc = *self.multiply_colors.add(drawable_idx);
+                                                let sr = src_r * mc.x;
+                                                let sg = src_g * mc.y;
+                                                let sb = src_b * mc.z;
+
+                                                // Blend mode dispatch
+                                                let blend = *self.blend_modes.add(drawable_idx);
+                                                let mode = (blend & 0xFF) as u8;
+                                                let (out_r, out_g, out_b) = match mode {
+                                                    1 | 3 => { // Additive / Add
+                                                        (
+                                                            (dr as f32 / 255.0 + sr * final_alpha).min(1.0),
+                                                            (dg as f32 / 255.0 + sg * final_alpha).min(1.0),
+                                                            (db as f32 / 255.0 + sb * final_alpha).min(1.0),
+                                                        )
+                                                    }
+                                                    2 | 6 => { // MultiplyCompatible / Multiply
+                                                        let d0 = dr as f32 / 255.0;
+                                                        let d1 = dg as f32 / 255.0;
+                                                        let d2 = db as f32 / 255.0;
+                                                        (
+                                                            d0 * (1.0 - final_alpha) + d0 * sr * final_alpha,
+                                                            d1 * (1.0 - final_alpha) + d1 * sg * final_alpha,
+                                                            d2 * (1.0 - final_alpha) + d2 * sb * final_alpha,
+                                                        )
+                                                    }
+                                                    _ => { // Normal / Screen / other: alpha composite over
+                                                        let inv = 1.0 - final_alpha;
+                                                        (
+                                                            sr * final_alpha + (dr as f32 / 255.0) * inv,
+                                                            sg * final_alpha + (dg as f32 / 255.0) * inv,
+                                                            sb * final_alpha + (db as f32 / 255.0) * inv,
+                                                        )
+                                                    }
+                                                };
+
+                                                // Screen color (brightening)
+                                                let sc = *self.screen_colors.add(drawable_idx);
+                                                let out_r = 1.0 - (1.0 - out_r) * (1.0 - sc.x);
+                                                let out_g = 1.0 - (1.0 - out_g) * (1.0 - sc.y);
+                                                let out_b = 1.0 - (1.0 - out_b) * (1.0 - sc.z);
+
+                                                context.set_pixel_color(
+                                                    x, y,
+                                                    (out_r * 255.0).clamp(0.0, 255.0) as u8,
+                                                    (out_g * 255.0).clamp(0.0, 255.0) as u8,
+                                                    (out_b * 255.0).clamp(0.0, 255.0) as u8,
+                                                );
                                             }
                                         }
                                     }

@@ -131,6 +131,17 @@ impl Context {
         }
     }
 
+    pub fn get_pixel_color(&self, x: u16, y: u16) -> (u8, u8, u8) {
+        let rw = self.render_width();
+        let rh = self.render_height();
+        if x < rw && y < rh {
+            let idx = (y as usize) * (rw as usize) + (x as usize);
+            self.pixel_buffer[idx]
+        } else {
+            (0, 0, 0)
+        }
+    }
+
     pub fn update(&mut self) -> Result<(), Box<dyn Error>> {
         let (tw, th) = terminal::size()?;
         if self.width != tw || self.height != th {

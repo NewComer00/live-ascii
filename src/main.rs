@@ -101,6 +101,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         args.camera,
         tracker,
     );
+    if args.camera {
+        context.tracker.run()?;
+    }
     context.image_protocol = match args.image_protocol.to_lowercase().as_str() {
         "sixel" => ImageProtocol::Sixel,
         "kitty" => ImageProtocol::Kitty,

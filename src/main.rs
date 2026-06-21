@@ -27,6 +27,8 @@ struct Args {
     #[arg(short, long)]
     camera: bool,
     #[arg(short, long)]
+    physics: bool,
+    #[arg(short, long)]
     text_shader: Option<String>, // file path
     /// Image output protocol: "halfblock" (default), "sixel", "kitty"
     #[arg(long, default_value = "halfblock")]
@@ -103,6 +105,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
     if args.camera {
         context.tracker.run()?;
+    }
+    if args.physics {
+        context.use_physics = true;
     }
     context.image_protocol = match args.image_protocol.to_lowercase().as_str() {
         "sixel" => ImageProtocol::Sixel,

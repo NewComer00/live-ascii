@@ -30,6 +30,9 @@ You can download and try Live2D sample model [here](https://www.live2d.com/en/le
 # Run with camera tracking enabled
 cargo run --release -- ./path/to/model.model3.json --camera
 
+# Run with physics enabled
+cargo run --release -- ./path/to/model.model3.json --physics
+
 # Run with mouse support (drag to pan, scroll to zoom)
 cargo run --release -- ./path/to/model.model3.json --mouse
 
@@ -40,7 +43,7 @@ cargo run --release -- ./path/to/model.model3.json --image-protocol kitty
 cargo run --release -- ./path/to/model.model3.json --image-protocol sixel
 
 # Combine flags
-cargo run --release -- ./path/to/model.model3.json --camera --mouse --image-protocol kitty
+cargo run --release -- ./path/to/model.model3.json --camera --physics --mouse --image-protocol kitty
 ```
 
 `--image-protocol` values:

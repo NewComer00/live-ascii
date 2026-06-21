@@ -38,6 +38,15 @@ struct Args {
     /// Background color for transparent areas: "rgba(r,g,b,a)" (e.g. "rgba(0,0,0,0)"), not applied in sixel mode
     #[arg(long, default_value = "rgba(0,0,0,0)")]
     bg_color: String,
+    /// View scale percentage, e.g. "200%" for 2x zoom (default "100%")
+    #[arg(long, default_value = "100%")]
+    scale: String,
+    /// Horizontal view offset as percentage of panel width, e.g. "-10%" shifts left (default "0%")
+    #[arg(long, default_value = "0%", allow_hyphen_values = true)]
+    offsetx: String,
+    /// Vertical view offset as percentage of panel height, e.g. "50%" shifts down (default "0%")
+    #[arg(long, default_value = "0%", allow_hyphen_values = true)]
+    offsety: String,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -147,6 +156,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     // initialize renderer
     let mut renderer = Renderer::new(model_ptr, textures, shader_manager);
 
+    // apply startup view transform from CLI flags
+    renderer.apply_startup_transform(
+        parse_percent(&args.scale, 100.0) / 100.0,
+        parse_percent(&args.offsetx, 0.0) / 100.0,
+        parse_percent(&args.offsety, 0.0) / 100.0,
+    );
+
     // initialize expression
     let mut em = ExpressionManager::new();
 
@@ -210,4 +226,12 @@ fn parse_bg_color(input: &str) -> (u8, u8, u8, u8) {
         0
     });
     (r, g, b, a)
+}
+
+fn parse_percent(input: &str, default: f32) -> f32 {
+    let s = input.strip_suffix('%').unwrap_or(input);
+    s.parse::<f32>().unwrap_or_else(|_| {
+        eprintln!("Invalid percent value '{}', using default {:.0}%.", input, default);
+        default
+    })
 }

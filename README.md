@@ -45,8 +45,14 @@ cargo run --release -- ./path/to/model.model3.json --image-protocol sixel
 # Set background color behind the character (rgba format)
 cargo run --release -- ./path/to/model.model3.json --bg-color "rgba(30,30,30,255)"
 
+# Set view scale (default 100%)
+cargo run --release -- ./path/to/model.model3.json --scale "200%"
+
+# Set view offset as percentage of panel width/height (default 0%)
+cargo run --release -- ./path/to/model.model3.json --offsetx "-10%" --offsety "50%"
+
 # Combine flags
-cargo run --release -- ./path/to/model.model3.json --camera --physics --mouse --image-protocol kitty --bg-color "rgba(0,0,0,0)"
+cargo run --release -- ./path/to/model.model3.json --camera --physics --mouse --image-protocol kitty --bg-color "rgba(0,0,0,0)" --scale "150%"
 ```
 
 `--image-protocol` values:
@@ -58,6 +64,8 @@ cargo run --release -- ./path/to/model.model3.json --camera --physics --mouse --
 | `kitty` | Kitty graphics protocol — Kitty, Konsole ≥ 23.04, WezTerm, Ghostty |
 
 `--bg-color` accepts an `rgba(r,g,b,a)` string, e.g. `--bg-color "rgba(255,0,0,128)"`. Not applied in sixel mode (sixel always renders opaque to avoid frame bleed).
+
+`--scale`, `--offsetx`, `--offsety` accept a percentage string like `"200%"`, `"-10%"`, `"50%"` and set the initial view transform.
 
 Note: *For face tracking, ensure [OpenSeeFace](https://github.com/emilianavt/OpenSeeFace) is running and sending data to the default UDP port (11573).*
 

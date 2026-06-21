@@ -381,6 +381,13 @@ impl Renderer {
         }
     }
 
+    /// Apply startup view transform from CLI flags (scale, offset_x, offset_y).
+    pub fn apply_startup_transform(&mut self, scale: f32, offset_x: f32, offset_y: f32) {
+        self.scale = scale;
+        self.offset_x = offset_x;
+        self.offset_y = offset_y;
+    }
+
     pub fn find_param_index(&self, target_id: &str) -> Option<usize> {
         unsafe {
             let count = csmGetParameterCount(self.model.model) as usize;

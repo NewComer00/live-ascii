@@ -107,6 +107,14 @@ impl Renderer {
     ) -> Result<(), Box<dyn Error>> {
         terminal::enable_raw_mode()?;
         execute!(stdout(), cursor::Hide)?;
+        // Clear screen before first frame (handles previous app content,
+        // transparent backgrounds, etc.)
+        {
+            use std::io::Write;
+            let mut out = stdout();
+            out.write_all(b"\x1b[2J")?;
+            out.flush()?;
+        }
         let backend = CrosstermBackend::new(stdout());
         let mut terminal = Terminal::new(backend)?;
         if context.mouse {

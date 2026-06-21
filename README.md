@@ -36,9 +36,6 @@ cargo run --release -- ./path/to/model.model3.json --physics
 # Run with mouse support (drag to pan, scroll to zoom)
 cargo run --release -- ./path/to/model.model3.json --mouse
 
-# Run with Kitty graphics protocol
-cargo run --release -- ./path/to/model.model3.json --image-protocol kitty
-
 # Run with Sixel graphics protocol
 cargo run --release -- ./path/to/model.model3.json --image-protocol sixel
 
@@ -52,7 +49,7 @@ cargo run --release -- ./path/to/model.model3.json --scale "200%"
 cargo run --release -- ./path/to/model.model3.json --offsetx "-10%" --offsety "50%"
 
 # Combine flags
-cargo run --release -- ./path/to/model.model3.json --camera --physics --mouse --image-protocol kitty --bg-color "rgba(0,0,0,0)" --scale "150%"
+cargo run --release -- ./path/to/model.model3.json --camera --physics --mouse --image-protocol halfblock --bg-color "rgba(0,0,0,0)" --scale "300%" --offsety "50%"
 ```
 
 `--image-protocol` values:

@@ -151,7 +151,7 @@ pub unsafe fn rasterize_drawable(
                 return;
             }
 
-            let (dr, dg, db) = context.get_pixel_color(x, y);
+            let (dr, dg, db, _) = context.get_pixel_color(x, y);
 
             // Multiply color tint
             let src_r = (p[0] as f32 / 255.0) * mc.x;
@@ -199,6 +199,7 @@ pub unsafe fn rasterize_drawable(
                 (out_r * 255.0).clamp(0.0, 255.0) as u8,
                 (out_g * 255.0).clamp(0.0, 255.0) as u8,
                 (out_b * 255.0).clamp(0.0, 255.0) as u8,
+                255,
             );
         });
     }

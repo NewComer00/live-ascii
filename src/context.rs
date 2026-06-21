@@ -59,7 +59,7 @@ pub struct Context {
     pub width: u16,
     pub height: u16,
     // Per-pixel color buffer at width × (height * 2) resolution
-    pub pixel_buffer: Vec<(u8, u8, u8)>,
+    pub pixel_buffer: Vec<(u8, u8, u8, u8)>,
     pub image: bool,
     pub base_dir: Arc<str>,
     pub model_setting: ModelSetting,
@@ -85,6 +85,7 @@ pub struct Context {
     pub popups: Popups,
     pub image_protocol: ImageProtocol,
     pub mouse: bool,
+    pub bg_color: (u8, u8, u8, u8),
 }
 
 impl Context {
@@ -144,6 +145,7 @@ impl Context {
             popups: Popups::new(),
             image_protocol: ImageProtocol::HalfBlock,
             mouse: false,
+            bg_color: (0, 0, 0, 0),
         }
     }
 
@@ -151,23 +153,23 @@ impl Context {
         self.live_setting = Some(live);
     }
 
-    pub fn set_pixel_color(&mut self, x: u16, y: u16, r: u8, g: u8, b: u8) {
+    pub fn set_pixel_color(&mut self, x: u16, y: u16, r: u8, g: u8, b: u8, a: u8) {
         let rw = self.render_width();
         let rh = self.render_height();
         if x < rw && y < rh {
             let idx = (y as usize) * (rw as usize) + (x as usize);
-            self.pixel_buffer[idx] = (r, g, b);
+            self.pixel_buffer[idx] = (r, g, b, a);
         }
     }
 
-    pub fn get_pixel_color(&self, x: u16, y: u16) -> (u8, u8, u8) {
+    pub fn get_pixel_color(&self, x: u16, y: u16) -> (u8, u8, u8, u8) {
         let rw = self.render_width();
         let rh = self.render_height();
         if x < rw && y < rh {
             let idx = (y as usize) * (rw as usize) + (x as usize);
             self.pixel_buffer[idx]
         } else {
-            (0, 0, 0)
+            (0, 0, 0, 0)
         }
     }
 
@@ -180,13 +182,13 @@ impl Context {
         let rw = self.render_width() as usize;
         let rh = self.render_height() as usize;
         if self.pixel_buffer.len() != rw * rh {
-            self.pixel_buffer.resize(rw * rh, (0, 0, 0));
+            self.pixel_buffer.resize(rw * rh, self.bg_color);
         }
         Ok(())
     }
 
     pub fn clear(&mut self) {
-        self.pixel_buffer.fill((0, 0, 0));
+        self.pixel_buffer.fill(self.bg_color);
     }
 
     pub fn buffer_to_text(&self) -> Text<'static> {
@@ -200,18 +202,25 @@ impl Context {
             let mut spans = Vec::with_capacity(w);
             for x in 0..w {
                 let top_idx = top_row * w + x;
-                let (tr, tg, tb) = self.pixel_buffer.get(top_idx).copied().unwrap_or((0, 0, 0));
-                let (br, bg, bb) = if bot_row < ph {
-                    self.pixel_buffer.get(bot_row * w + x).copied().unwrap_or((0, 0, 0))
+                let (tr, tg, tb, ta) = self.pixel_buffer.get(top_idx).copied().unwrap_or((0, 0, 0, 0));
+                let (br, bg, bb, ba) = if bot_row < ph {
+                    self.pixel_buffer.get(bot_row * w + x).copied().unwrap_or((0, 0, 0, 0))
                 } else {
-                    (0, 0, 0)
+                    (0, 0, 0, 0)
                 };
-                spans.push(Span::styled(
-                    "▀".to_string(),
-                    Style::default()
-                        .fg(RatatuiColor::Rgb(tr, tg, tb))
-                        .bg(RatatuiColor::Rgb(br, bg, bb)),
-                ));
+                if ta == 0 && ba == 0 {
+                    spans.push(Span::styled(
+                        " ".to_string(),
+                        Style::default(),
+                    ));
+                } else {
+                    spans.push(Span::styled(
+                        "▀".to_string(),
+                        Style::default()
+                            .fg(RatatuiColor::Rgb(tr, tg, tb))
+                            .bg(RatatuiColor::Rgb(br, bg, bb)),
+                    ));
+                }
             }
             lines.push(Line::from(spans));
         }
@@ -223,7 +232,9 @@ impl Context {
         let h = self.render_height() as usize;
         let mut rgba: Vec<u8> = Vec::with_capacity(w * h * 4);
         for i in 0..self.pixel_buffer.len() {
-            let (r, g, b) = self.pixel_buffer[i];
+            let (r, g, b, _a) = self.pixel_buffer[i];
+            // Always opaque in sixel to avoid previous frames bleeding through;
+            // transparency is handled by the other protocols.
             rgba.extend_from_slice(&[r, g, b, 255]);
         }
         icy_sixel::SixelImage::try_from_rgba(rgba, w, h)
@@ -243,8 +254,8 @@ impl Context {
         let w = self.render_width() as u32;
         let h = self.render_height() as u32;
         let mut rgba = Vec::with_capacity((w * h * 4) as usize);
-        for (r, g, b) in &self.pixel_buffer {
-            rgba.extend_from_slice(&[*r, *g, *b, 255]);
+        for (r, g, b, a) in &self.pixel_buffer {
+            rgba.extend_from_slice(&[*r, *g, *b, *a]);
         }
 
         let cmd = Command::builder()

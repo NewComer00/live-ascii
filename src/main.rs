@@ -35,6 +35,9 @@ struct Args {
     image_protocol: String,
     #[arg(long)]
     mouse: bool,
+    /// Background color for transparent areas: "rgba(r,g,b,a)" (e.g. "rgba(0,0,0,0)"), not applied in sixel mode
+    #[arg(long, default_value = "rgba(0,0,0,0)")]
+    bg_color: String,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -115,6 +118,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         _ => ImageProtocol::HalfBlock,
     };
     context.mouse = args.mouse;
+    context.bg_color = parse_bg_color(&args.bg_color);
 
     let mut shader_manager = ShaderManager::new();
     if let Some(path) = &args.text_shader {
@@ -175,4 +179,35 @@ fn main() -> Result<(), Box<dyn Error>> {
     )?;
 
     Ok(())
+}
+
+fn parse_bg_color(input: &str) -> (u8, u8, u8, u8) {
+    let fail = (0, 0, 0, 0);
+    let s = input.strip_prefix("rgba(").unwrap_or(input);
+    let s = s.strip_suffix(')').unwrap_or(s);
+    let parts: Vec<&str> = s.split(',').map(|p| p.trim()).collect();
+    if parts.len() != 4 {
+        eprintln!("Invalid --bg-color format '{}', expected rgba(r,g,b,a). Using transparent.", input);
+        return fail;
+    }
+    let parse = |s: &str| -> Option<u8> {
+        s.parse::<u16>().ok().filter(|&v| v <= 255).map(|v| v as u8)
+    };
+    let r = parse(parts[0]).unwrap_or_else(|| {
+        eprintln!("Invalid --bg-color red component '{}', using transparent.", parts[0]);
+        0
+    });
+    let g = parse(parts[1]).unwrap_or_else(|| {
+        eprintln!("Invalid --bg-color green component '{}', using transparent.", parts[1]);
+        0
+    });
+    let b = parse(parts[2]).unwrap_or_else(|| {
+        eprintln!("Invalid --bg-color blue component '{}', using transparent.", parts[2]);
+        0
+    });
+    let a = parse(parts[3]).unwrap_or_else(|| {
+        eprintln!("Invalid --bg-color alpha component '{}', using transparent.", parts[3]);
+        0
+    });
+    (r, g, b, a)
 }

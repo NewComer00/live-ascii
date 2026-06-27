@@ -1,6 +1,7 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::collections::HashMap;
 use std::error::Error;
+use std::io::Write;
 use std::sync::{
     Arc,
     mpsc::{Sender, Receiver, channel}
@@ -58,8 +59,15 @@ pub enum Panel {
 pub struct Context {
     pub width: u16,
     pub height: u16,
-    // Per-pixel color buffer at width × (height * 2) resolution
-    pub pixel_buffer: Vec<(u8, u8, u8, u8)>,
+    /// Per-pixel color buffer at render_width × render_height resolution.
+    /// Stored as [r, g, b, a] arrays — guaranteed contiguous layout, compatible
+    /// with bytemuck::cast_slice for zero-copy &[u8] reinterpretation.
+    pub pixel_buffer: Vec<[u8; 4]>,
+    /// Scratch buffer for sixel encoding: holds RGBA bytes with alpha forced to
+    /// 255. Reused across frames to avoid per-frame heap allocation.
+    pub sixel_scratch: Vec<u8>,
+    /// Reused ANSI output for half-block direct terminal writes.
+    pub half_block_scratch: Vec<u8>,
     pub image: bool,
     pub base_dir: Arc<str>,
     pub model_setting: ModelSetting,
@@ -124,6 +132,8 @@ impl Context {
             width: 0,
             height: 0,
             pixel_buffer: vec![],
+            sixel_scratch: vec![],
+            half_block_scratch: vec![],
             image,
             base_dir: base_dir.into(),
             model_setting,
@@ -158,7 +168,7 @@ impl Context {
         let rh = self.render_height();
         if x < rw && y < rh {
             let idx = (y as usize) * (rw as usize) + (x as usize);
-            self.pixel_buffer[idx] = (r, g, b, a);
+            self.pixel_buffer[idx] = [r, g, b, a];
         }
     }
 
@@ -167,7 +177,8 @@ impl Context {
         let rh = self.render_height();
         if x < rw && y < rh {
             let idx = (y as usize) * (rw as usize) + (x as usize);
-            self.pixel_buffer[idx]
+            let [r, g, b, a] = self.pixel_buffer[idx];
+            (r, g, b, a)
         } else {
             (0, 0, 0, 0)
         }
@@ -182,13 +193,85 @@ impl Context {
         let rw = self.render_width() as usize;
         let rh = self.render_height() as usize;
         if self.pixel_buffer.len() != rw * rh {
-            self.pixel_buffer.resize(rw * rh, self.bg_color);
+            let bg = [self.bg_color.0, self.bg_color.1, self.bg_color.2, self.bg_color.3];
+            self.pixel_buffer.resize(rw * rh, bg);
         }
         Ok(())
     }
 
     pub fn clear(&mut self) {
-        self.pixel_buffer.fill(self.bg_color);
+        let bg = [self.bg_color.0, self.bg_color.1, self.bg_color.2, self.bg_color.3];
+        self.pixel_buffer.fill(bg);
+    }
+
+    /// True when motion/debug panels or popups need ratatui overlay rendering.
+    pub fn has_overlay_ui(&self) -> bool {
+        !matches!(self.current_op_panel, OpPanel::None)
+            || !matches!(self.current_debug_panel, DebugPanel::None)
+            || !self.popups.inner.is_empty()
+    }
+
+    /// Write half-block pixels directly to the terminal as batched ANSI,
+    /// bypassing ratatui's per-cell buffer diff.
+    pub fn write_half_block(&mut self, out: &mut impl Write) -> std::io::Result<()> {
+        let w = self.width as usize;
+        let ph = self.pixel_height() as usize;
+        let cells_h = self.height as usize;
+
+        self.half_block_scratch.clear();
+        let buf = &mut self.half_block_scratch;
+        buf.extend_from_slice(b"\x1b[H");
+
+        let pb = &self.pixel_buffer;
+
+        let mut cur_fg: Option<[u8; 3]> = None;
+        let mut cur_bg: Option<[u8; 3]> = None;
+        let mut plain_space = false;
+
+        for cell_y in 0..cells_h {
+            if cell_y > 0 {
+                buf.push(b'\n');
+            }
+            let top_row = cell_y * 2;
+            let bot_row = top_row + 1;
+
+            for x in 0..w {
+                let top_idx = top_row * w + x;
+                let [tr, tg, tb, ta] = pb[top_idx];
+                let [br, bg, bb, ba] = if bot_row < ph {
+                    pb[bot_row * w + x]
+                } else {
+                    [0, 0, 0, 0]
+                };
+
+                if ta == 0 && ba == 0 {
+                    if !plain_space || cur_fg.is_some() || cur_bg.is_some() {
+                        buf.extend_from_slice(b"\x1b[0m");
+                        cur_fg = None;
+                        cur_bg = None;
+                        plain_space = true;
+                    }
+                    buf.push(b' ');
+                } else {
+                    plain_space = false;
+                    let fg = [tr, tg, tb];
+                    let bg_rgb = [br, bg, bb];
+                    if cur_fg != Some(fg) {
+                        push_true_color(buf, b"38", tr, tg, tb);
+                        cur_fg = Some(fg);
+                    }
+                    if cur_bg != Some(bg_rgb) {
+                        push_true_color(buf, b"48", br, bg, bb);
+                        cur_bg = Some(bg_rgb);
+                    }
+                    buf.extend_from_slice(b"\xE2\x96\x80"); // ▀
+                }
+            }
+        }
+
+        buf.extend_from_slice(b"\x1b[0m");
+        out.write_all(buf)?;
+        out.flush()
     }
 
     pub fn buffer_to_text(&self) -> Text<'static> {
@@ -202,20 +285,18 @@ impl Context {
             let mut spans = Vec::with_capacity(w);
             for x in 0..w {
                 let top_idx = top_row * w + x;
-                let (tr, tg, tb, ta) = self.pixel_buffer.get(top_idx).copied().unwrap_or((0, 0, 0, 0));
-                let (br, bg, bb, ba) = if bot_row < ph {
-                    self.pixel_buffer.get(bot_row * w + x).copied().unwrap_or((0, 0, 0, 0))
+                let [tr, tg, tb, ta] = self.pixel_buffer.get(top_idx).copied().unwrap_or([0, 0, 0, 0]);
+                let [br, bg, bb, ba] = if bot_row < ph {
+                    self.pixel_buffer.get(bot_row * w + x).copied().unwrap_or([0, 0, 0, 0])
                 } else {
-                    (0, 0, 0, 0)
+                    [0, 0, 0, 0]
                 };
                 if ta == 0 && ba == 0 {
-                    spans.push(Span::styled(
-                        " ".to_string(),
-                        Style::default(),
-                    ));
+                    // Fully transparent cell — emit a plain space with no color codes.
+                    spans.push(Span::raw(" "));
                 } else {
                     spans.push(Span::styled(
-                        "▀".to_string(),
+                        "▀",
                         Style::default()
                             .fg(RatatuiColor::Rgb(tr, tg, tb))
                             .bg(RatatuiColor::Rgb(br, bg, bb)),
@@ -227,17 +308,24 @@ impl Context {
         Text::from(lines)
     }
 
-    pub fn buffer_to_sixel(&self) -> Vec<u8> {
+    pub fn buffer_to_sixel(&mut self) -> Vec<u8> {
         let w = self.render_width() as usize;
         let h = self.render_height() as usize;
-        let mut rgba: Vec<u8> = Vec::with_capacity(w * h * 4);
-        for i in 0..self.pixel_buffer.len() {
-            let (r, g, b, _a) = self.pixel_buffer[i];
+
+        // Rebuild scratch buffer with alpha forced to 255.
+        // Reusing the allocation avoids a heap alloc every frame.
+        self.sixel_scratch.clear();
+        self.sixel_scratch.reserve(w * h * 4);
+        for [r, g, b, _] in &self.pixel_buffer {
             // Always opaque in sixel to avoid previous frames bleeding through;
             // transparency is handled by the other protocols.
-            rgba.extend_from_slice(&[r, g, b, 255]);
+            self.sixel_scratch.extend_from_slice(&[*r, *g, *b, 255]);
         }
-        icy_sixel::SixelImage::try_from_rgba(rgba, w, h)
+
+        // icy_sixel::SixelImage::try_from_rgba takes ownership of the Vec.
+        // We clone here to keep sixel_scratch intact for the next frame's
+        // reserve() call (avoids a fresh alloc next time).
+        icy_sixel::SixelImage::try_from_rgba(self.sixel_scratch.clone(), w, h)
             .ok()
             .and_then(|img| img.encode().ok())
             .unwrap_or_default()
@@ -248,15 +336,15 @@ impl Context {
         use kitty_graphics_protocol::{Command, Action, ImageFormat};
 
         let prev_id = KITTY_IMAGE_ID.load(Ordering::Relaxed);
-        let curr_id = if prev_id >= 255 { 1 } else { prev_id + 1 };
+        let curr_id = if prev_id >= 4096 { 1 } else { prev_id + 1 };
         KITTY_IMAGE_ID.store(curr_id, Ordering::Relaxed);
 
         let w = self.render_width() as u32;
         let h = self.render_height() as u32;
-        let mut rgba = Vec::with_capacity((w * h * 4) as usize);
-        for (r, g, b, a) in &self.pixel_buffer {
-            rgba.extend_from_slice(&[*r, *g, *b, *a]);
-        }
+
+        // Zero-copy reinterpretation of [u8; 4] pixel buffer as &[u8].
+        // Safe because [u8; 4] is guaranteed contiguous with no padding.
+        let rgba: &[u8] = bytemuck::cast_slice(&self.pixel_buffer);
 
         let cmd = Command::builder()
             .action(Action::TransmitAndDisplay)
@@ -267,11 +355,11 @@ impl Context {
             .quiet(2)
             .build();
 
-        let mut out: Vec<u8> = cmd.serialize_chunked(&rgba)
+        let mut out: Vec<u8> = cmd.serialize_chunked(rgba)
             .map(|chunks| chunks.flat_map(|s| s.into_bytes()).collect())
             .unwrap_or_default();
 
-        // delete PREVIOUS id after new frame is already in the sequence
+        // Delete PREVIOUS id after new frame is already in the sequence.
         if let Ok(del) = Command::delete_by_id(prev_id).serialize(&[]) {
             out.extend(del.into_bytes());
         }
@@ -282,5 +370,29 @@ impl Context {
     pub fn get_active_expressions(&self) -> Vec<&str> {
         self.active_expressions.keys().map(|s| s.as_str()).collect()
     }
+}
 
+fn push_true_color(buf: &mut Vec<u8>, prefix: &[u8; 2], r: u8, g: u8, b: u8) {
+    buf.extend_from_slice(b"\x1b[");
+    buf.extend_from_slice(prefix);
+    buf.extend_from_slice(b";2;");
+    push_u8(buf, r);
+    buf.push(b';');
+    push_u8(buf, g);
+    buf.push(b';');
+    push_u8(buf, b);
+    buf.push(b'm');
+}
+
+fn push_u8(buf: &mut Vec<u8>, n: u8) {
+    if n >= 100 {
+        buf.push(b'0' + n / 100);
+        buf.push(b'0' + (n / 10) % 10);
+        buf.push(b'0' + n % 10);
+    } else if n >= 10 {
+        buf.push(b'0' + n / 10);
+        buf.push(b'0' + n % 10);
+    } else {
+        buf.push(b'0' + n);
+    }
 }

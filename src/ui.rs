@@ -9,8 +9,10 @@ use crate::context::*;
 use crate::expression::manager::*;
 use crate::model::Model;
 use crate::motion::manager::*;
+use crate::ui::half_block::HalfBlockImage;
 use crate::ui::popup::*;
 
+pub mod half_block;
 pub mod popup;
 
 pub fn ui(
@@ -20,11 +22,8 @@ pub fn ui(
     mm: &MotionManager,
     em: &ExpressionManager,
 ) -> Result<(), Box<dyn Error>> {
-    let model_text = context.buffer_to_text();
-    let model_widget = Paragraph::new(model_text);
-
     let area = frame.area();
-    frame.render_widget(model_widget, area);
+    frame.render_widget(HalfBlockImage::new(context), area);
 
     let motion_list_border_fg = Color::Magenta;
     let motion_list_border_hl_bg = Color::LightMagenta;

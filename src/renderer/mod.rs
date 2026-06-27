@@ -139,6 +139,7 @@ impl Renderer {
         let mut mask_buffer =
             vec![false; (context.render_width() as usize) * (context.render_height() as usize)];
         let mut face_controller = FaceController::new(0.3);
+        let mut had_overlay_ui = false;
 
         loop {
             let frame_start = Instant::now();
@@ -334,11 +335,20 @@ impl Renderer {
                     }
                 }
                 ImageProtocol::HalfBlock => {
-                    terminal.draw(|f| {
-                        if let Err(e) = ui(f, context, &self.model, &mm, &em) {
-                            eprintln!("{:?}", e);
+                    let overlay_ui = context.has_overlay_ui();
+                    if overlay_ui {
+                        if !had_overlay_ui {
+                            terminal.clear()?;
                         }
-                    })?;
+                        terminal.draw(|f| {
+                            if let Err(e) = ui(f, context, &self.model, &mm, &em) {
+                                eprintln!("{:?}", e);
+                            }
+                        })?;
+                    } else {
+                        context.write_half_block(&mut stdout())?;
+                    }
+                    had_overlay_ui = overlay_ui;
                 }
             }
 

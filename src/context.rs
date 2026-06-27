@@ -220,7 +220,6 @@ impl Context {
 
         self.half_block_scratch.clear();
         let buf = &mut self.half_block_scratch;
-        buf.extend_from_slice(b"\x1b[H");
 
         let pb = &self.pixel_buffer;
 
@@ -229,9 +228,9 @@ impl Context {
         let mut plain_space = false;
 
         for cell_y in 0..cells_h {
-            if cell_y > 0 {
-                buf.push(b'\n');
-            }
+            // Use CUP per row instead of \n — on Linux/WSL LF does not
+            // carriage-return, so \n leaves the cursor mid-line and breaks alignment.
+            push_cursor(buf, cell_y + 1, 1);
             let top_row = cell_y * 2;
             let bot_row = top_row + 1;
 
@@ -382,6 +381,31 @@ fn push_true_color(buf: &mut Vec<u8>, prefix: &[u8; 2], r: u8, g: u8, b: u8) {
     buf.push(b';');
     push_u8(buf, b);
     buf.push(b'm');
+}
+
+/// `\x1b[{row};{col}H` — 1-indexed cursor position (CUP).
+fn push_cursor(buf: &mut Vec<u8>, row: usize, col: usize) {
+    buf.extend_from_slice(b"\x1b[");
+    push_usize(buf, row);
+    buf.push(b';');
+    push_usize(buf, col);
+    buf.push(b'H');
+}
+
+fn push_usize(buf: &mut Vec<u8>, n: usize) {
+    if n == 0 {
+        buf.push(b'0');
+        return;
+    }
+    let mut tmp = [0u8; 20];
+    let mut i = 20;
+    let mut v = n;
+    while v > 0 {
+        i -= 1;
+        tmp[i] = b'0' + (v % 10) as u8;
+        v /= 10;
+    }
+    buf.extend_from_slice(&tmp[i..]);
 }
 
 fn push_u8(buf: &mut Vec<u8>, n: u8) {

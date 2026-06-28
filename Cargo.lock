@@ -1148,6 +1148,7 @@ dependencies = [
  "image",
  "kitty-graphics-protocol",
  "libc",
+ "quantette",
  "rand 0.10.0",
  "ratatui",
  "serde",

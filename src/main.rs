@@ -47,6 +47,10 @@ struct Args {
     /// Vertical view offset as percentage of panel height, e.g. "50%" shifts down (default "0%")
     #[arg(long, default_value = "0%", allow_hyphen_values = true)]
     offsety: String,
+    /// Sixel quantette resolution (sixel mode only). 100% = reference (10×20 px/cell).
+    /// Also accepts explicit px/cell, e.g. 4x8. Output is always reference display size. Default: 100%.
+    #[arg(long, default_value = "100%")]
+    sixel_resolution: String,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -126,6 +130,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         "kitty" => ImageProtocol::Kitty,
         _ => ImageProtocol::HalfBlock,
     };
+    context.sixel_resolution = parse_sixel_resolution(&args.sixel_resolution);
     context.mouse = args.mouse;
     context.bg_color = parse_bg_color(&args.bg_color);
 

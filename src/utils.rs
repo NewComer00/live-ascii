@@ -1,6 +1,8 @@
 use crossterm::event::{KeyCode, KeyModifiers, ModifierKeyCode};
 use image::RgbaImage;
 
+use crate::context::SixelResolution;
+
 pub fn allocate_aligned(size: usize, alignment: usize) -> *mut u8 {
     #[cfg(unix)]
     {
@@ -125,13 +127,56 @@ pub fn enhance_edges(img: &RgbaImage) -> RgbaImage {
     out
 }
 
+/// Parse `--sixel-resolution`: percent scale or explicit px/cell (`10x20`).
+pub fn parse_sixel_resolution(input: &str) -> SixelResolution {
+    let s = input.trim();
+    let lower = s.to_ascii_lowercase();
+
+    if let Some((a, b)) = lower.split_once('x') {
+        if let (Ok(x), Ok(y)) = (a.trim().parse(), b.trim().parse()) {
+            return SixelResolution::PxPerCell(x, y);
+        }
+    }
+
+    let pct_str = s.strip_suffix('%').unwrap_or(s);
+    if let Ok(pct) = pct_str.parse::<f32>() {
+        return SixelResolution::Scale((pct / 100.0).max(0.01));
+    }
+
+    eprintln!(
+        "Invalid --sixel-resolution '{}', using 100% (10×20 px/cell).",
+        input
+    );
+    SixelResolution::Scale(1.0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::context::SixelResolution;
    
     #[test]
     fn get_file_name_test() {
         let pre = get_file_name("test.model3.json");
         assert_eq!(pre, "test");
+    }
+
+    #[test]
+    fn parse_sixel_resolution_percent() {
+        assert_eq!(parse_sixel_resolution("100%"), SixelResolution::Scale(1.0));
+        assert_eq!(parse_sixel_resolution("50%"), SixelResolution::Scale(0.5));
+        assert_eq!(parse_sixel_resolution("40"), SixelResolution::Scale(0.4));
+    }
+
+    #[test]
+    fn parse_sixel_resolution_px_per_cell() {
+        assert_eq!(
+            parse_sixel_resolution("10x20"),
+            SixelResolution::PxPerCell(10, 20)
+        );
+        assert_eq!(
+            parse_sixel_resolution("4x8"),
+            SixelResolution::PxPerCell(4, 8)
+        );
     }
 }

@@ -39,6 +39,10 @@ cargo run --release -- ./path/to/model.model3.json --mouse
 # Run with Sixel graphics protocol
 cargo run --release -- ./path/to/model.model3.json --image-protocol sixel
 
+# Lower sixel quantette resolution for faster encode (same on-screen size)
+cargo run --release -- ./path/to/model.model3.json --image-protocol sixel --sixel-resolution 40%
+cargo run --release -- ./path/to/model.model3.json --image-protocol sixel --sixel-resolution 4x8
+
 # Set background color behind the character (rgba format)
 cargo run --release -- ./path/to/model.model3.json --bg-color "rgba(30,30,30,255)"
 
@@ -63,6 +67,18 @@ cargo run --release -- ./path/to/model.model3.json --camera --physics --mouse --
 `--bg-color` accepts an `rgba(r,g,b,a)` string, e.g. `--bg-color "rgba(255,0,0,128)"`. Not applied in sixel mode (sixel always renders opaque to avoid frame bleed).
 
 `--scale`, `--offsetx`, `--offsety` accept a percentage string like `"200%"`, `"-10%"`, `"50%"` and set the initial view transform.
+
+`--sixel-resolution` (sixel mode only) sets quantette resolution. Output is always upsampled to the reference display size (10×20 px per terminal cell). Accepts a percentage or explicit px/cell:
+
+| Value | Quantette px/cell | On-screen |
+|-------|-------------------|-----------|
+| `100%` (default) | 10×20 | reference size |
+| `50%` | 5×10 | reference size |
+| `40%` | 4×8 | reference size |
+| `10x20` | 10×20 | reference size |
+| `4x8` | 4×8 | reference size |
+
+Percent values without `%` are also accepted (e.g. `40` = `40%`).
 
 Note: *For face tracking, ensure [OpenSeeFace](https://github.com/emilianavt/OpenSeeFace) is running and sending data to the default UDP port (11573).*
 

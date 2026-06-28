@@ -10,6 +10,7 @@ use std::sync::{
 use ratatui::widgets::ListState;
 
 use crossterm::terminal;
+use icy_sixel::{EncodeOptions, QuantizeMethod};
 use ratatui::style::{Color as RatatuiColor, Style};
 use ratatui::text::{Line, Span, Text};
 
@@ -21,6 +22,22 @@ use crate::receiver::*;
 
 /// Global atomic counter for Kitty image IDs, preventing too many resident images in the terminal.
 static KITTY_IMAGE_ID: AtomicU32 = AtomicU32::new(1);
+
+/// VT340 / Windows Terminal reference scale (10×20 px per cell).
+pub const SIXEL_REFERENCE_PX_PER_CELL_X: u16 = 10;
+pub const SIXEL_REFERENCE_PX_PER_CELL_Y: u16 = 20;
+
+const KITTY_PX_PER_CELL_X: u16 = 10;
+const KITTY_PX_PER_CELL_Y: u16 = 20;
+
+/// How sixel encode resolution is chosen (see `--sixel-resolution`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SixelResolution {
+    /// Scale relative to reference (100% = 10×20 px/cell).
+    Scale(f32),
+    /// Fixed pixels per terminal cell, e.g. `10x20`.
+    PxPerCell(u16, u16),
+}
 
 /// Supported image output protocol.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -92,6 +109,8 @@ pub struct Context {
     pub use_physics: bool,
     pub popups: Popups,
     pub image_protocol: ImageProtocol,
+    /// Sixel encode resolution (`--sixel-resolution`).
+    pub sixel_resolution: SixelResolution,
     pub mouse: bool,
     pub bg_color: (u8, u8, u8, u8),
 }
@@ -102,29 +121,58 @@ impl Context {
     }
 
     /// Width in pixels for rasterization target.
-    /// Sixel / Kitty modes scale to terminal pixel size (10 px/cell);
-    /// half-block uses terminal cells × 1.
     pub fn render_width(&self) -> u16 {
-        if self.image_protocol == ImageProtocol::Sixel
-            || self.image_protocol == ImageProtocol::Kitty
-        {
-            self.width * 10
-        } else {
-            self.width
+        match self.image_protocol {
+            ImageProtocol::Sixel => self.width * SIXEL_REFERENCE_PX_PER_CELL_X,
+            ImageProtocol::Kitty => self.width * KITTY_PX_PER_CELL_X,
+            ImageProtocol::HalfBlock => self.width,
         }
     }
 
     /// Height in pixels for rasterization target.
-    /// Sixel / Kitty modes scale to terminal pixel size (20 px/cell);
-    /// half-block uses cells × 2.
     pub fn render_height(&self) -> u16 {
-        if self.image_protocol == ImageProtocol::Sixel
-            || self.image_protocol == ImageProtocol::Kitty
-        {
-            self.height * 20
-        } else {
-            self.pixel_height()
+        match self.image_protocol {
+            ImageProtocol::Sixel => self.height * SIXEL_REFERENCE_PX_PER_CELL_Y,
+            ImageProtocol::Kitty => self.height * KITTY_PX_PER_CELL_Y,
+            ImageProtocol::HalfBlock => self.pixel_height(),
         }
+    }
+
+    /// Pixels per terminal cell for quantette (`--sixel-resolution`).
+    fn sixel_quant_px_per_cell(&self) -> (u16, u16) {
+        match self.sixel_resolution {
+            SixelResolution::Scale(scale) => {
+                let scale = scale.max(0.01);
+                (
+                    (SIXEL_REFERENCE_PX_PER_CELL_X as f32 * scale)
+                        .round()
+                        .max(1.0) as u16,
+                    (SIXEL_REFERENCE_PX_PER_CELL_Y as f32 * scale)
+                        .round()
+                        .max(1.0) as u16,
+                )
+            }
+            SixelResolution::PxPerCell(x, y) => (x.max(1), y.max(1)),
+        }
+    }
+
+    fn sixel_quant_width(&self) -> usize {
+        let (px_x, _) = self.sixel_quant_px_per_cell();
+        self.width as usize * px_x as usize
+    }
+
+    fn sixel_quant_height(&self) -> usize {
+        let (_, px_y) = self.sixel_quant_px_per_cell();
+        self.height as usize * px_y as usize
+    }
+
+    /// On-screen footprint — always reference size (10×20 px per cell).
+    fn sixel_display_width(&self) -> usize {
+        self.width as usize * SIXEL_REFERENCE_PX_PER_CELL_X as usize
+    }
+
+    fn sixel_display_height(&self) -> usize {
+        self.height as usize * SIXEL_REFERENCE_PX_PER_CELL_Y as usize
     }
 
     pub fn new(image: bool, model_setting: ModelSetting, base_dir: &str, camera: bool, tracker: Tracker) -> Self {
@@ -154,6 +202,7 @@ impl Context {
             use_physics: false,
             popups: Popups::new(),
             image_protocol: ImageProtocol::HalfBlock,
+            sixel_resolution: SixelResolution::Scale(1.0),
             mouse: false,
             bg_color: (0, 0, 0, 0),
         }
@@ -308,27 +357,57 @@ impl Context {
     }
 
     pub fn buffer_to_sixel(&mut self) -> Vec<u8> {
-        let w = self.render_width() as usize;
-        let h = self.render_height() as usize;
+        let quant_w = self.sixel_quant_width();
+        let quant_h = self.sixel_quant_height();
+        let display_w = self.sixel_display_width();
+        let display_h = self.sixel_display_height();
+        self.fill_sixel_scratch(quant_w, quant_h);
 
-        // Rebuild scratch buffer with alpha forced to 255.
-        // Reusing the allocation avoids a heap alloc every frame.
-        self.sixel_scratch.clear();
-        self.sixel_scratch.reserve(w * h * 4);
-        for [r, g, b, _] in &self.pixel_buffer {
-            // Always opaque in sixel to avoid previous frames bleeding through;
-            // transparency is handled by the other protocols.
-            self.sixel_scratch.extend_from_slice(&[*r, *g, *b, 255]);
+        let rgba = std::mem::take(&mut self.sixel_scratch);
+        crate::sixel_encode::encode_rgba_at_display_size(
+            rgba,
+            quant_w,
+            quant_h,
+            display_w,
+            display_h,
+            &sixel_encode_options(),
+        )
+        .unwrap_or_default()
+    }
+
+    /// Downsample reference raster into sixel_scratch at quantette resolution.
+    fn fill_sixel_scratch(&mut self, dst_w: usize, dst_h: usize) {
+        let src_w = self.render_width() as usize;
+        let src_h = self.render_height() as usize;
+        let len = dst_w * dst_h * 4;
+
+        if self.sixel_scratch.len() != len {
+            self.sixel_scratch.resize(len, 255);
         }
 
-        // icy_sixel::SixelImage::try_from_rgba takes ownership of the Vec.
-        // We clone here to keep sixel_scratch intact for the next frame's
-        // reserve() call (avoids a fresh alloc next time).
-        icy_sixel::SixelImage::try_from_rgba(self.sixel_scratch.clone(), w, h)
-            .ok()
-            .and_then(|img| img.encode().ok())
-            .unwrap_or_default()
-            .into_bytes()
+        let pb = &self.pixel_buffer;
+        if dst_w == src_w && dst_h == src_h {
+            for (chunk, [r, g, b, _]) in self.sixel_scratch.chunks_mut(4).zip(pb.iter()) {
+                chunk[0] = *r;
+                chunk[1] = *g;
+                chunk[2] = *b;
+            }
+            return;
+        }
+
+        for dy in 0..dst_h {
+            let sy = dy * src_h / dst_h;
+            let src_row = sy * src_w;
+            let out_row = dy * dst_w * 4;
+            for dx in 0..dst_w {
+                let sx = dx * src_w / dst_w;
+                let [r, g, b, _] = pb[src_row + sx];
+                let o = out_row + dx * 4;
+                self.sixel_scratch[o] = r;
+                self.sixel_scratch[o + 1] = g;
+                self.sixel_scratch[o + 2] = b;
+            }
+        }
     }
 
     pub fn buffer_to_kitty(&self) -> Vec<u8> {
@@ -368,6 +447,15 @@ impl Context {
 
     pub fn get_active_expressions(&self) -> Vec<&str> {
         self.active_expressions.keys().map(|s| s.as_str()).collect()
+    }
+}
+
+/// Sixel encoder settings tuned for live animation (quantette is the hot path).
+fn sixel_encode_options() -> EncodeOptions {
+    EncodeOptions {
+        max_colors: 256,
+        diffusion: 0.0,
+        quantize_method: QuantizeMethod::Wu,
     }
 }
 

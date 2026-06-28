@@ -15,3 +15,4 @@ pub mod controller;
 pub mod physics;
 pub mod shader;
 pub mod receiver;
+pub mod sixel_encode;

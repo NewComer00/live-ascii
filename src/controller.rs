@@ -40,6 +40,15 @@ impl FaceController {
     }
 
     pub fn update_parameters(&mut self, model: &mut Model, packet: &Packet) {
+        self.update_parameters_except(model, packet, &std::collections::HashSet::new());
+    }
+
+    pub fn update_parameters_except(
+        &mut self,
+        model: &mut Model,
+        packet: &Packet,
+        skip_params: &std::collections::HashSet<String>,
+    ) {
         const HEAD_X_GAIN: f32 = 40.0; 
         const HEAD_Y_GAIN: f32 = 40.0; 
         const HEAD_Z_GAIN: f32 = 40.0; 
@@ -73,85 +82,108 @@ impl FaceController {
         let _left_eye = packet.lms[36];
         let _right_eye = packet.lms[45];
 
-        self.set_param_smoothed(model, "ParamAngleX", yaw * HEAD_X_GAIN);
-        self.set_param_smoothed(model, "ParamAngleY", pitch * HEAD_Y_GAIN);
-        self.set_param_smoothed(model, "ParamAngleZ", roll * HEAD_Z_GAIN);
+        self.set_param_smoothed_if(model, skip_params, "ParamAngleX", yaw * HEAD_X_GAIN);
+        self.set_param_smoothed_if(model, skip_params, "ParamAngleY", pitch * HEAD_Y_GAIN);
+        self.set_param_smoothed_if(model, skip_params, "ParamAngleZ", roll * HEAD_Z_GAIN);
 
-        self.set_param_smoothed(model, "ParamBodyAngleX", yaw * BODY_X_GAIN);
-        self.set_param_smoothed(model, "ParamBodyAngleY", pitch * BODY_Y_GAIN);
-        self.set_param_smoothed(model, "ParamBodyAngleZ", roll * BODY_Z_GAIN);
+        self.set_param_smoothed_if(model, skip_params, "ParamBodyAngleX", yaw * BODY_X_GAIN);
+        self.set_param_smoothed_if(model, skip_params, "ParamBodyAngleY", pitch * BODY_Y_GAIN);
+        self.set_param_smoothed_if(model, skip_params, "ParamBodyAngleZ", roll * BODY_Z_GAIN);
 
         // Eye
-        self.set_param_smoothed(model, "ParamEyeLOpen", clamp01(packet.eye_blink_left));
-        self.set_param_smoothed(model, "ParamEyeROpen", clamp01(packet.eye_blink_right));
+        self.set_param_smoothed_if(model, skip_params, "ParamEyeLOpen", clamp01(packet.eye_blink_left));
+        self.set_param_smoothed_if(model, skip_params, "ParamEyeROpen", clamp01(packet.eye_blink_right));
 
         // EyeBall
-        self.set_param_smoothed(model, "ParamEyeBallX", yaw * EYE_BALL_GAIN);
-        self.set_param_smoothed(model, "ParamEyeBallY", pitch * EYE_BALL_GAIN);
+        self.set_param_smoothed_if(model, skip_params, "ParamEyeBallX", yaw * EYE_BALL_GAIN);
+        self.set_param_smoothed_if(model, skip_params, "ParamEyeBallY", pitch * EYE_BALL_GAIN);
 
         // Mouth
         let mouth_open_y = clamp(packet.mouth_open * MOUTH_OPEN_GAIN, 0.0, 1.2);
         let mouth_form = clamp(packet.mouth_wide * MOUTH_FORM_GAIN - 1.0, -1.0, 1.0);
 
-        self.set_param_smoothed(model, "ParamMouthOpenY", mouth_open_y);
-        self.set_param_smoothed(model, "ParamMouthForm", mouth_form);
+        self.set_param_smoothed_if(model, skip_params, "ParamMouthOpenY", mouth_open_y);
+        self.set_param_smoothed_if(model, skip_params, "ParamMouthForm", mouth_form);
 
-        self.set_param_smoothed(
+        self.set_param_smoothed_if(
             model,
+            skip_params,
             "ParamMouthCornerLeft",
             clamp(packet.mouth_corner_updown_left * 1.5, -1.0, 1.0),
         );
-        self.set_param_smoothed(
+        self.set_param_smoothed_if(
             model,
+            skip_params,
             "ParamMouthCornerRight",
             clamp(packet.mouth_corner_updown_right * 1.5, -1.0, 1.0),
         );
 
-        self.set_param_smoothed(
+        self.set_param_smoothed_if(
             model,
+            skip_params,
             "ParamMouthCornerInOutLeft",
             clamp(packet.mouth_corner_inout_left * 1.5, -1.0, 1.0),
         );
-        self.set_param_smoothed(
+        self.set_param_smoothed_if(
             model,
+            skip_params,
             "ParamMouthCornerInOutRight",
             clamp(packet.mouth_corner_inout_right * 1.5, -1.0, 1.0),
         );
 
         // Eye Details
-        self.set_param_smoothed(
+        self.set_param_smoothed_if(
             model,
+            skip_params,
             "ParamEyeSteepnessLeft",
             clamp(packet.eye_steepness_left, -1.0, 1.0),
         );
-        self.set_param_smoothed(
+        self.set_param_smoothed_if(
             model,
+            skip_params,
             "ParamEyeUpDownLeft",
             clamp(packet.eye_up_down_left, -1.0, 1.0),
         );
-        self.set_param_smoothed(
+        self.set_param_smoothed_if(
             model,
+            skip_params,
             "ParamEyeQuirkLeft",
             clamp(packet.eye_quirk_left, -1.0, 1.0),
         );
 
-        self.set_param_smoothed(
+        self.set_param_smoothed_if(
             model,
+            skip_params,
             "ParamEyeSteepnessRight",
             clamp(packet.eye_steepness_right, -1.0, 1.0),
         );
-        self.set_param_smoothed(
+        self.set_param_smoothed_if(
             model,
+            skip_params,
             "ParamEyeUpDownRight",
             clamp(packet.eye_up_down_right, -1.0, 1.0),
         );
-        self.set_param_smoothed(
+        self.set_param_smoothed_if(
             model,
+            skip_params,
             "ParamEyeQuirkRight",
             clamp(packet.eye_quirk_right, -1.0, 1.0),
         );
 
-        self.set_param_smoothed(model, "ParamEyeL", clamp01(packet.eye_left));
-        self.set_param_smoothed(model, "ParamEyeR", clamp01(packet.eye_right));
+        self.set_param_smoothed_if(model, skip_params, "ParamEyeL", clamp01(packet.eye_left));
+        self.set_param_smoothed_if(model, skip_params, "ParamEyeR", clamp01(packet.eye_right));
+    }
+
+    fn set_param_smoothed_if(
+        &mut self,
+        model: &mut Model,
+        skip_params: &std::collections::HashSet<String>,
+        param_id: &str,
+        target_value: f32,
+    ) {
+        if skip_params.contains(param_id) {
+            return;
+        }
+        self.set_param_smoothed(model, param_id, target_value);
     }
 }

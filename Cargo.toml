@@ -19,6 +19,10 @@ icy_sixel = "0.5"
 quantette = "0.5"
 kitty-graphics-protocol = "0.1"
 bytemuck = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time", "macros"] }
+tokio-tungstenite = "0.26"
+uuid = { version = "1", features = ["v4"] }
+futures-util = "0.3"
 
 [features] 
 default = ["debug"]
@@ -27,3 +31,6 @@ tracker_debug = []
 
 [profile.release]
 debug = true
+
+[dev-dependencies]
+vtubestudio = "0.9"

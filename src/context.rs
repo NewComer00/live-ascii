@@ -19,6 +19,7 @@ use crate::tracker::*;
 use crate::model_setting::ModelSetting;
 use crate::ui::popup::*;
 use crate::receiver::*;
+use crate::vts::VtsServer;
 
 /// Global atomic counter for Kitty image IDs, preventing too many resident images in the terminal.
 static KITTY_IMAGE_ID: AtomicU32 = AtomicU32::new(1);
@@ -37,6 +38,54 @@ pub enum SixelResolution {
     Scale(f32),
     /// Fixed pixels per terminal cell, e.g. `10x20`.
     PxPerCell(u16, u16),
+}
+
+/// Palette / dithering preset for sixel encoding (see `--sixel-color-quality`).
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum SixelColorQuality {
+    /// 64 colors, no dither — fastest.
+    Low,
+    /// 128 colors, light dither.
+    Medium,
+    /// 256 colors, Floyd–Steinberg (default).
+    #[default]
+    High,
+    /// 256 colors, stronger dither.
+    Ultra,
+    /// 256 colors, K-means palette + full dither — slowest, best gradients.
+    Epic,
+}
+
+impl SixelColorQuality {
+    pub fn encode_options(self) -> EncodeOptions {
+        match self {
+            Self::Low => EncodeOptions {
+                max_colors: 64,
+                diffusion: 0.5,
+                quantize_method: QuantizeMethod::Wu,
+            },
+            Self::Medium => EncodeOptions {
+                max_colors: 128,
+                diffusion: 0.5,
+                quantize_method: QuantizeMethod::Wu,
+            },
+            Self::High => EncodeOptions {
+                max_colors: 256,
+                diffusion: 0.375,
+                quantize_method: QuantizeMethod::Wu,
+            },
+            Self::Ultra => EncodeOptions {
+                max_colors: 256,
+                diffusion: 0.875,
+                quantize_method: QuantizeMethod::Wu,
+            },
+            Self::Epic => EncodeOptions {
+                max_colors: 256,
+                diffusion: 1.0,
+                quantize_method: QuantizeMethod::kmeans(),
+            },
+        }
+    }
 }
 
 /// Supported image output protocol.
@@ -111,8 +160,11 @@ pub struct Context {
     pub image_protocol: ImageProtocol,
     /// Sixel encode resolution (`--sixel-resolution`).
     pub sixel_resolution: SixelResolution,
+    /// Sixel palette / dithering preset (`--sixel-color-quality`).
+    pub sixel_color_quality: SixelColorQuality,
     pub mouse: bool,
     pub bg_color: (u8, u8, u8, u8),
+    pub vts: Option<VtsServer>,
 }
 
 impl Context {
@@ -242,8 +294,10 @@ impl Context {
             popups: Popups::new(),
             image_protocol: ImageProtocol::HalfBlock,
             sixel_resolution: SixelResolution::Scale(1.0),
+            sixel_color_quality: SixelColorQuality::default(),
             mouse: false,
             bg_color: (0, 0, 0, 0),
+            vts: None,
         }
     }
 
@@ -412,7 +466,7 @@ impl Context {
             display_w,
             display_h,
             encode_h,
-            &sixel_encode_options(),
+            &self.sixel_color_quality.encode_options(),
         )
         .unwrap_or_default()
     }
@@ -489,15 +543,6 @@ impl Context {
 
     pub fn get_active_expressions(&self) -> Vec<&str> {
         self.active_expressions.keys().map(|s| s.as_str()).collect()
-    }
-}
-
-/// Sixel encoder settings tuned for live animation (quantette is the hot path).
-fn sixel_encode_options() -> EncodeOptions {
-    EncodeOptions {
-        max_colors: 256,
-        diffusion: 0.0,
-        quantize_method: QuantizeMethod::Wu,
     }
 }
 

@@ -18,6 +18,7 @@ use live_ascii::tracker::*;
 
 use live_ascii::renderer::*;
 use live_ascii::utils::*;
+use live_ascii::vts::{VtsConfig, VtsServer};
 
 use clap::Parser;
 
@@ -51,6 +52,18 @@ struct Args {
     /// Also accepts explicit px/cell, e.g. 4x8. Output is always reference display size. Default: 100%.
     #[arg(long, default_value = "100%")]
     sixel_resolution: String,
+    /// Sixel palette / dithering (sixel mode only): low, medium, high, ultra, epic. Default: high.
+    #[arg(long, default_value = "high")]
+    sixel_color_quality: String,
+    /// Enable VTube Studio-compatible WebSocket API server
+    #[arg(long)]
+    vts: bool,
+    /// VTS API WebSocket port (default 8001)
+    #[arg(long, default_value = "8001")]
+    vts_port: u16,
+    /// Auto-approve VTS plugin authentication token requests
+    #[arg(long, default_value_t = true)]
+    vts_auto_approve: bool,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -131,6 +144,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         _ => ImageProtocol::HalfBlock,
     };
     context.sixel_resolution = parse_sixel_resolution(&args.sixel_resolution);
+    context.sixel_color_quality = parse_sixel_color_quality(&args.sixel_color_quality);
     context.mouse = args.mouse;
     context.bg_color = parse_bg_color(&args.bg_color);
 
@@ -153,6 +167,19 @@ fn main() -> Result<(), Box<dyn Error>> {
                 full_path
             );
         }
+    }
+
+    if args.vts {
+        let vts = VtsServer::start(
+            VtsConfig {
+                port: args.vts_port,
+                auto_approve: args.vts_auto_approve,
+                model_name: name.to_string(),
+            },
+            &model_setting,
+            context.live_setting.as_ref(),
+        );
+        context.vts = Some(vts);
     }
 
     // initialize motion manager

@@ -1,7 +1,7 @@
 use crossterm::event::{KeyCode, KeyModifiers, ModifierKeyCode};
 use image::RgbaImage;
 
-use crate::context::SixelResolution;
+use crate::context::{SixelColorQuality, SixelResolution};
 
 pub fn allocate_aligned(size: usize, alignment: usize) -> *mut u8 {
     #[cfg(unix)]
@@ -150,10 +150,29 @@ pub fn parse_sixel_resolution(input: &str) -> SixelResolution {
     SixelResolution::Scale(1.0)
 }
 
+/// Parse `--sixel-color-quality`: low, medium, high, ultra, max (+ aliases).
+pub fn parse_sixel_color_quality(input: &str) -> SixelColorQuality {
+    match input.trim().to_ascii_lowercase().as_str() {
+        "low" | "fast" => SixelColorQuality::Low,
+        "medium" | "mid" => SixelColorQuality::Medium,
+        "high" => SixelColorQuality::High,
+        "ultra" => SixelColorQuality::Ultra,
+        "max" | "best" => SixelColorQuality::Epic,
+        _ => {
+            eprintln!(
+                "Invalid --sixel-color-quality '{}', using high. \
+                 Valid: low, medium, high, ultra, max",
+                input
+            );
+            SixelColorQuality::High
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::context::SixelResolution;
+    use crate::context::{SixelColorQuality, SixelResolution};
    
     #[test]
     fn get_file_name_test() {
@@ -178,5 +197,15 @@ mod tests {
             parse_sixel_resolution("4x8"),
             SixelResolution::PxPerCell(4, 8)
         );
+    }
+
+    #[test]
+    fn sixel_color_quality_parser() {
+        assert_eq!(parse_sixel_color_quality("low"), SixelColorQuality::Low);
+        assert_eq!(parse_sixel_color_quality("fast"), SixelColorQuality::Low);
+        assert_eq!(parse_sixel_color_quality("medium"), SixelColorQuality::Medium);
+        assert_eq!(parse_sixel_color_quality("high"), SixelColorQuality::High);
+        assert_eq!(parse_sixel_color_quality("ultra"), SixelColorQuality::Ultra);
+        assert_eq!(parse_sixel_color_quality("max"), SixelColorQuality::Max);
     }
 }

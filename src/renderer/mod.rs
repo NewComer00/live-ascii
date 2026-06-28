@@ -34,6 +34,7 @@ use crate::motion::manager::*;
 use crate::physics::*;
 use crate::shader::*;
 use crate::ui::{popup::*, *};
+use crate::vts::{process_commands, update_face_tracking};
 use input::DragState;
 
 pub struct Renderer {
@@ -202,6 +203,10 @@ impl Renderer {
                 &mut _text_chars,
             );
 
+            if let Some(vts) = context.vts.clone() {
+                process_commands(&vts, context, em, mm, model_setting);
+            }
+
             // ── Model update ─────────────────────────────────────────────────
             let terminal_resized = context.update()?;
             context.clear();
@@ -219,10 +224,28 @@ impl Renderer {
             self.model.load_parameters();
             mm.update_motion(&mut self.model, delta_time);
 
+            let vts_skip = context
+                .vts
+                .clone()
+                .map(|v| v.owned_live2d_params())
+                .unwrap_or_default();
+
+            if let Some(vts) = context.vts.clone() {
+                vts.tick(
+                    &mut self.model,
+                    &context.active_expressions.keys().cloned().collect(),
+                );
+            }
+
             if context.camera {
                 if let Some(packet) = context.tracker.latest() {
                     if packet.success == 1 {
-                        face_controller.update_parameters(&mut self.model, &packet);
+                        update_face_tracking(
+                            &mut face_controller,
+                            &mut self.model,
+                            &packet,
+                            &vts_skip,
+                        );
                     }
                 }
             }

@@ -1,8 +1,17 @@
 # Live-ASCII
 
-A Live2D Cubism model renderer for the terminal, with optional face tracking.
+A Live2D Cubism model renderer for the terminal, with Sixel and VTS support.
 
-<video src="https://github.com/user-attachments/assets/78ba7044-7531-4efd-83f4-9939b241c100"></video>
+<div align="center">
+  <img width="75%" alt="Demo.webp" src="https://github.com/user-attachments/assets/48f44223-0e49-4065-b3a0-c3f7e5d0784c" />
+
+<details>
+<summary>🎦 Demo Video</summary>
+
+<video src="https://github.com/user-attachments/assets/5cc969e5-8594-4ead-bff9-c2218806eda1"></video>
+
+</details>
+</div>
 
 ## Supported Platforms
 

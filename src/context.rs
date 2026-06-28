@@ -157,22 +157,61 @@ impl Context {
     }
 
     fn sixel_quant_width(&self) -> usize {
+        let display_w = self.sixel_display_width();
         let (px_x, _) = self.sixel_quant_px_per_cell();
-        self.width as usize * px_x as usize
+        ((display_w as f32 * px_x as f32) / SIXEL_REFERENCE_PX_PER_CELL_X as f32)
+            .round()
+            .max(1.0) as usize
     }
 
     fn sixel_quant_height(&self) -> usize {
+        let display_h = self.sixel_display_height();
         let (_, px_y) = self.sixel_quant_px_per_cell();
-        self.height as usize * px_y as usize
+        ((display_h as f32 * px_y as f32) / SIXEL_REFERENCE_PX_PER_CELL_Y as f32)
+            .round()
+            .max(1.0) as usize
     }
 
-    /// On-screen footprint — always reference size (10×20 px per cell).
     fn sixel_display_width(&self) -> usize {
         self.width as usize * SIXEL_REFERENCE_PX_PER_CELL_X as usize
     }
 
+    /// Logical sixel content height in pixels (before band alignment).
+    fn sixel_raw_height(&self) -> usize {
+        self.sixel_rows() as usize * SIXEL_REFERENCE_PX_PER_CELL_Y as usize
+    }
+
+    /// Content height for upsample/quantette. Zellij: trim to sixel band; elsewhere: full height.
     fn sixel_display_height(&self) -> usize {
-        self.height as usize * SIXEL_REFERENCE_PX_PER_CELL_Y as usize
+        let raw = self.sixel_raw_height();
+        if Self::in_zellij() {
+            raw - raw % 6
+        } else {
+            raw
+        }
+    }
+
+    /// Wire encode height. Zellij: same as display; elsewhere: pad up to sixel band with black.
+    fn sixel_encode_height(&self) -> usize {
+        let display = self.sixel_display_height();
+        if Self::in_zellij() {
+            display
+        } else {
+            display.div_ceil(6) * 6
+        }
+    }
+
+    /// Terminal rows covered by sixel output (Zellij: leave bottom row for pane chrome).
+    pub(crate) fn sixel_rows(&self) -> u16 {
+        if Self::in_zellij() {
+            self.height.saturating_sub(1)
+        } else {
+            self.height
+        }
+    }
+
+    fn in_zellij() -> bool {
+        std::env::var_os("ZELLIJ").is_some()
     }
 
     pub fn new(image: bool, model_setting: ModelSetting, base_dir: &str, camera: bool, tracker: Tracker) -> Self {
@@ -233,9 +272,10 @@ impl Context {
         }
     }
 
-    pub fn update(&mut self) -> Result<(), Box<dyn Error>> {
+    pub fn update(&mut self) -> Result<bool, Box<dyn Error>> {
         let (tw, th) = terminal::size()?;
-        if self.width != tw || self.height != th {
+        let resized = self.width != tw || self.height != th;
+        if resized {
             self.width = tw;
             self.height = th;
         }
@@ -245,7 +285,7 @@ impl Context {
             let bg = [self.bg_color.0, self.bg_color.1, self.bg_color.2, self.bg_color.3];
             self.pixel_buffer.resize(rw * rh, bg);
         }
-        Ok(())
+        Ok(resized)
     }
 
     pub fn clear(&mut self) {
@@ -361,6 +401,7 @@ impl Context {
         let quant_h = self.sixel_quant_height();
         let display_w = self.sixel_display_width();
         let display_h = self.sixel_display_height();
+        let encode_h = self.sixel_encode_height();
         self.fill_sixel_scratch(quant_w, quant_h);
 
         let rgba = std::mem::take(&mut self.sixel_scratch);
@@ -370,6 +411,7 @@ impl Context {
             quant_h,
             display_w,
             display_h,
+            encode_h,
             &sixel_encode_options(),
         )
         .unwrap_or_default()

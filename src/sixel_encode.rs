@@ -11,17 +11,19 @@ struct Rgb {
     b: u8,
 }
 
-/// Encode RGBA at `quant_w`×`quant_h`, upsample palette indices to `display_w`×`display_h`.
+/// Encode RGBA at `quant_w`×`quant_h`, upsample to `display_w`×`display_h`, pad to `encode_h`.
 pub fn encode_rgba_at_display_size(
     rgba: Vec<u8>,
     quant_w: usize,
     quant_h: usize,
     display_w: usize,
     display_h: usize,
+    encode_h: usize,
     opts: &EncodeOptions,
 ) -> Option<Vec<u8>> {
     if quant_w == display_w && quant_h == display_h {
-        return SixelImage::try_from_rgba(rgba, display_w, display_h)
+        let rgba = pad_rgba_bottom(rgba, display_w, display_h, encode_h);
+        return SixelImage::try_from_rgba(rgba, display_w, encode_h)
             .ok()
             .map(|image| {
                 image
@@ -29,7 +31,7 @@ pub fn encode_rgba_at_display_size(
                     .encode_with(opts)
             })
             .and_then(|r| r.ok())
-            .map(|s| s.into_bytes());
+            .map(|s| inject_raster_attributes(s.into_bytes(), display_w, encode_h));
     }
 
     let opacity_mask: Vec<bool> = rgba.chunks_exact(4).map(|c| c[3] >= 128).collect();
@@ -71,16 +73,62 @@ pub fn encode_rgba_at_display_size(
     let indices = indexed.indices();
     let (up_indices, up_opacity) =
         upsample_indexed(indices, &opacity_mask, quant_w, quant_h, display_w, display_h);
+    let (up_indices, up_opacity) = pad_indexed_bottom(
+        up_indices,
+        up_opacity,
+        display_w,
+        display_h,
+        encode_h,
+    );
 
     encode_indexed_to_sixel(
         &palette,
         &up_indices,
         &up_opacity,
         display_w,
-        display_h,
+        encode_h,
     )
     .ok()
-    .map(|s| s.into_bytes())
+    .map(|s| inject_raster_attributes(s.into_bytes(), display_w, encode_h))
+}
+
+/// Insert `"1;1;w;h` raster attributes so terminals (especially Zellij) erase the
+/// background rectangle before drawing each frame.
+fn inject_raster_attributes(sixel: Vec<u8>, width: usize, height: usize) -> Vec<u8> {
+    let Some(p) = sixel.windows(2).position(|w| w == b"\x1bP") else {
+        return sixel;
+    };
+    let Some(rel) = sixel[p + 2..].iter().position(|&b| b == b'q') else {
+        return sixel;
+    };
+    let q_pos = p + 2 + rel;
+
+    let mut attrs = vec![b'"'];
+    attrs.extend_from_slice(b"1;1;");
+    push_ascii_usize(&mut attrs, width);
+    attrs.push(b';');
+    push_ascii_usize(&mut attrs, height);
+
+    let mut out = Vec::with_capacity(sixel.len() + attrs.len());
+    out.extend_from_slice(&sixel[..=q_pos]);
+    out.extend_from_slice(&attrs);
+    out.extend_from_slice(&sixel[q_pos + 1..]);
+    out
+}
+
+fn push_ascii_usize(buf: &mut Vec<u8>, mut n: usize) {
+    if n == 0 {
+        buf.push(b'0');
+        return;
+    }
+    let mut digits = [0u8; 20];
+    let mut i = digits.len();
+    while n > 0 {
+        i -= 1;
+        digits[i] = b'0' + (n % 10) as u8;
+        n /= 10;
+    }
+    buf.extend_from_slice(&digits[i..]);
 }
 
 fn upsample_indexed(
@@ -104,6 +152,36 @@ fn upsample_indexed(
             out_op[dst_row + dx] = opacity[i];
         }
     }
+    (out_idx, out_op)
+}
+
+fn pad_rgba_bottom(rgba: Vec<u8>, width: usize, height: usize, encode_h: usize) -> Vec<u8> {
+    if encode_h <= height {
+        return rgba;
+    }
+    let mut out = rgba;
+    out.resize(width * encode_h * 4, 0);
+    for px in (width * height)..(width * encode_h) {
+        let o = px * 4;
+        out[o + 3] = 255;
+    }
+    out
+}
+
+fn pad_indexed_bottom(
+    indices: Vec<u8>,
+    opacity: Vec<bool>,
+    width: usize,
+    height: usize,
+    encode_h: usize,
+) -> (Vec<u8>, Vec<bool>) {
+    if encode_h <= height {
+        return (indices, opacity);
+    }
+    let mut out_idx = indices;
+    let mut out_op = opacity;
+    out_idx.resize(width * encode_h, 0);
+    out_op.resize(width * encode_h, true);
     (out_idx, out_op)
 }
 

@@ -140,6 +140,14 @@ impl Renderer {
             vec![false; (context.render_width() as usize) * (context.render_height() as usize)];
         let mut face_controller = FaceController::new(0.3);
         let mut had_overlay_ui = false;
+        let mut sixel_resize_frames = 0u8;
+        let sixel_mode = context.image_protocol == ImageProtocol::Sixel;
+        if sixel_mode {
+            use std::io::Write;
+            // DECSDM: keep sixel from pushing scrollback (once per session).
+            stdout().write_all(b"\x1b[?80h")?;
+            stdout().flush()?;
+        }
 
         loop {
             let frame_start = Instant::now();
@@ -195,7 +203,7 @@ impl Renderer {
             );
 
             // ── Model update ─────────────────────────────────────────────────
-            context.update()?;
+            let terminal_resized = context.update()?;
             context.clear();
 
             let needed =
@@ -314,14 +322,22 @@ impl Renderer {
             // ── Output ───────────────────────────────────────────────────────
             match context.image_protocol {
                 ImageProtocol::Sixel => {
+                    if terminal_resized {
+                        sixel_resize_frames = 3;
+                    }
                     let sixel_data = context.buffer_to_sixel();
                     let mut stdout = stdout();
                     use std::io::Write;
-                    stdout.write_all(b"\x1b[?80h")?; // DECSDM: no-scroll
-                    stdout.write_all(b"\x1b[H")?;
-                    stdout.write_all(&sixel_data)?;
-                    stdout.flush()?;
-                    stdout.write_all(b"\x1b[?80l")?; // restore
+                    write_sixel_frame(
+                        &mut stdout,
+                        &sixel_data,
+                        context.height,
+                        context.sixel_rows(),
+                        sixel_resize_frames > 0,
+                    )?;
+                    if sixel_resize_frames > 0 {
+                        sixel_resize_frames -= 1;
+                    }
                     stdout.flush()?;
                 }
                 ImageProtocol::Kitty => {
@@ -381,6 +397,10 @@ impl Renderer {
 
         if context.mouse {
             execute!(stdout(), DisableMouseCapture)?;
+        }
+        if sixel_mode {
+            use std::io::Write;
+            let _ = stdout().write_all(b"\x1b[?80l");
         }
         execute!(stdout(), cursor::Show)?;
         terminal::disable_raw_mode()?;
@@ -445,4 +465,62 @@ impl Renderer {
         }
         None
     }
+}
+
+/// Write one sixel animation frame with synchronized-update brackets.
+fn write_sixel_frame(
+    out: &mut impl std::io::Write,
+    data: &[u8],
+    terminal_rows: u16,
+    sixel_rows: u16,
+    terminal_resized: bool,
+) -> std::io::Result<()> {
+    let zellij = std::env::var_os("ZELLIJ").is_some();
+    out.write_all(b"\x1b[?2026h")?;
+    if zellij {
+        if terminal_resized {
+            // Drop stale sixel layers after pane resize (Zellij keeps old grid entries).
+            out.write_all(b"\x1b[?80l")?;
+            out.write_all(b"\x1b[3J")?;
+        }
+        out.write_all(b"\x1b[2J\x1b[H")?;
+        if terminal_resized {
+            out.write_all(b"\x1b[?80h")?;
+        }
+    } else {
+        out.write_all(b"\x1b[H")?;
+    }
+    out.write_all(data)?;
+    if zellij {
+        for row in sixel_rows.saturating_add(1)..=terminal_rows {
+            erase_terminal_row(out, row)?;
+        }
+    }
+    out.write_all(b"\x1b[?2026l")?;
+    Ok(())
+}
+
+fn erase_terminal_row(out: &mut impl std::io::Write, row: u16) -> std::io::Result<()> {
+    if row == 0 {
+        return Ok(());
+    }
+    out.write_all(b"\x1b[")?;
+    push_ascii_u16(out, row)?;
+    out.write_all(b";1H\x1b[2K")
+}
+
+fn push_ascii_u16(out: &mut impl std::io::Write, n: u16) -> std::io::Result<()> {
+    let mut buf = [0u8; 5];
+    let mut i = buf.len();
+    let mut v = n as usize;
+    if v == 0 {
+        out.write_all(b"0")?;
+        return Ok(());
+    }
+    while v > 0 {
+        i -= 1;
+        buf[i] = b'0' + (v % 10) as u8;
+        v /= 10;
+    }
+    out.write_all(&buf[i..])
 }

@@ -53,7 +53,7 @@ pub enum SixelColorQuality {
     /// 256 colors, stronger dither.
     Ultra,
     /// 256 colors, K-means palette + full dither — slowest, best gradients.
-    Epic,
+    Max,
 }
 
 impl SixelColorQuality {
@@ -79,7 +79,7 @@ impl SixelColorQuality {
                 diffusion: 0.875,
                 quantize_method: QuantizeMethod::Wu,
             },
-            Self::Epic => EncodeOptions {
+            Self::Max => EncodeOptions {
                 max_colors: 256,
                 diffusion: 1.0,
                 quantize_method: QuantizeMethod::kmeans(),

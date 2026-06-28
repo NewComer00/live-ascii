@@ -2,7 +2,7 @@
 
 A Live2D Cubism model renderer for the terminal, with optional face tracking.
 
-![showcase](./showcase.gif)
+<video src="https://github.com/user-attachments/assets/78ba7044-7531-4efd-83f4-9939b241c100"></video>
 
 ## Supported Platforms
 

@@ -157,7 +157,7 @@ pub fn parse_sixel_color_quality(input: &str) -> SixelColorQuality {
         "medium" | "mid" => SixelColorQuality::Medium,
         "high" => SixelColorQuality::High,
         "ultra" => SixelColorQuality::Ultra,
-        "max" | "best" => SixelColorQuality::Epic,
+        "max" | "best" => SixelColorQuality::Max,
         _ => {
             eprintln!(
                 "Invalid --sixel-color-quality '{}', using high. \
@@ -204,8 +204,10 @@ mod tests {
         assert_eq!(parse_sixel_color_quality("low"), SixelColorQuality::Low);
         assert_eq!(parse_sixel_color_quality("fast"), SixelColorQuality::Low);
         assert_eq!(parse_sixel_color_quality("medium"), SixelColorQuality::Medium);
+        assert_eq!(parse_sixel_color_quality("mid"), SixelColorQuality::Medium);
         assert_eq!(parse_sixel_color_quality("high"), SixelColorQuality::High);
         assert_eq!(parse_sixel_color_quality("ultra"), SixelColorQuality::Ultra);
         assert_eq!(parse_sixel_color_quality("max"), SixelColorQuality::Max);
+        assert_eq!(parse_sixel_color_quality("best"), SixelColorQuality::Max);
     }
 }

@@ -186,6 +186,7 @@ VTS tracking names such as `FaceAngleX` map to Live2D parameters (e.g. `ParamAng
 | Parameters | `InputParameterListRequest`, `Live2DParameterListRequest`, `ParameterValueRequest`, `InjectParameterDataRequest` |
 | Model | `CurrentModelRequest`, `AvailableModelsRequest` |
 | Actions | `HotkeysInCurrentModelRequest`, `HotkeyTriggerRequest`, `ExpressionStateRequest`, `ExpressionActivationRequest` |
+| Events | `EventSubscriptionRequest` → push `ModelAnimationEvent` (`Start` / `End`; idle loops repeat each cycle) |
 
 Hotkeys are built from expressions and motions in the loaded model (and optional `live.json` entries).
 
@@ -204,6 +205,14 @@ cargo run --example vts_inject_loop
 ```
 
 The example authenticates as `"live-ascii test"` / `"Dev"` (auto-approved by default), then drives head/face tracking, triggers motion hotkeys, and toggles expressions. Open the debug Parameters panel (`D` with a `live.json` hotkey) to verify injected values.
+
+**Animation events (`ModelAnimationEvent`):**
+
+Subscribes to motion Start/End push events and triggers the next hotkey only after the previous motion finishes (no fixed timers):
+
+```bash
+cargo run --example vts_animation_events
+```
 
 | Variable | Default | Purpose |
 |----------|---------|---------|

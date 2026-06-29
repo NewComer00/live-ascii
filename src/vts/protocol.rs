@@ -13,6 +13,7 @@ pub const ERR_PARAM_OWNED: i32 = 454;
 pub const ERR_HOTKEY_NOT_FOUND: i32 = 552;
 pub const ERR_EXPRESSION_NOT_FOUND: i32 = 402;
 pub const ERR_MODEL_NOT_LOADED: i32 = 501;
+pub const ERR_EVENT_UNKNOWN: i32 = 950;
 pub const ERR_UNSUPPORTED: i32 = 1000;
 
 #[derive(Debug, Clone, Deserialize)]

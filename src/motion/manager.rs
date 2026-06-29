@@ -19,12 +19,12 @@ impl MotionManager {
         }
     }
 
-    pub fn start_motion_priority(&mut self, motion: CubismMotion, auto_delete: bool, priority: usize) {
+    pub fn start_motion_priority(&mut self, motion: CubismMotion, auto_delete: bool, priority: usize) -> usize {
         if priority == self.reserve_prior {
             self.reserve_prior = 0;
         }
         self.current_prior = priority;
-        self.qm.start_motion(motion, auto_delete);
+        self.qm.start_motion(motion, auto_delete)
     }
 
     pub fn update_motion(&mut self, model: &mut Model, delta_time_s: f32) -> bool {

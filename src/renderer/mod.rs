@@ -224,6 +224,10 @@ impl Renderer {
             self.model.load_parameters();
             mm.update_motion(&mut self.model, delta_time);
 
+            if let Some(vts) = context.vts.clone() {
+                vts.poll_animation_events(&mm);
+            }
+
             let vts_skip = context
                 .vts
                 .clone()

@@ -73,7 +73,8 @@ pub struct CubismMotion {
 
 impl CubismMotion {
     pub fn new(motion_data: MotionData) -> Self {
-        let base = MotionBase::new();
+        let mut base = MotionBase::new();
+        base.is_loop = motion_data.loop_;
         Self {
             base,
             source_frame_rate: motion_data.fps,

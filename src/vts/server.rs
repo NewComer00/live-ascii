@@ -3,13 +3,16 @@ use std::sync::{Arc, Mutex};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
 use tokio::net::TcpListener;
+use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
 use super::auth::{validate_plugin_identity, TokenStore};
+use super::events::{event_subscription_response, parse_model_animation_config, Subscriptions};
+use super::hub::EventHub;
 use super::mapping::default_param_by_name;
 use super::protocol::{
     empty_data, request_id_or_uuid, validate_api, ResponseEnvelope, RequestEnvelope,
-    ERR_EXPRESSION_NOT_FOUND, ERR_HOTKEY_NOT_FOUND, ERR_MODEL_NOT_LOADED,
+    ERR_EVENT_UNKNOWN, ERR_EXPRESSION_NOT_FOUND, ERR_HOTKEY_NOT_FOUND, ERR_MODEL_NOT_LOADED,
     ERR_PARAM_NOT_FOUND, ERR_REQUIRES_AUTH, ERR_TOKEN_DENIED, ERR_UNSUPPORTED, VTS_VERSION,
 };
 use super::state::{InjectionMode, SharedVtsState, VtsMainCommand};
@@ -34,6 +37,7 @@ pub async fn run_server(
     auto_approve: bool,
     state: SharedVtsState,
     token_store: Arc<Mutex<TokenStore>>,
+    event_hub: Arc<EventHub>,
 ) {
     let addr = format!("127.0.0.1:{port}");
     let listener = match TcpListener::bind(&addr).await {
@@ -51,8 +55,11 @@ pub async fn run_server(
         };
         let state = Arc::clone(&state);
         let token_store = Arc::clone(&token_store);
+        let event_hub = Arc::clone(&event_hub);
         tokio::spawn(async move {
-            if let Err(e) = handle_connection(stream, auto_approve, state, token_store).await {
+            if let Err(e) =
+                handle_connection(stream, auto_approve, state, token_store, event_hub).await
+            {
                 eprintln!("VTS connection error: {e}");
             }
         });
@@ -64,10 +71,15 @@ async fn handle_connection(
     auto_approve: bool,
     state: SharedVtsState,
     token_store: Arc<Mutex<TokenStore>>,
+    event_hub: Arc<EventHub>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let ws = tokio_tungstenite::accept_async(stream).await?;
-    let (mut write, mut read) = ws.split();
+    let (write, mut read) = ws.split();
     let mut session = Session::new();
+    let subscriptions = Arc::new(Mutex::new(Subscriptions::default()));
+    let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+    let client_id = event_hub.register(Arc::clone(&subscriptions), event_tx);
+    let mut write = write;
 
     {
         let shared = state.lock().unwrap();
@@ -80,33 +92,52 @@ async fn handle_connection(
             return;
         }
         disconnected = true;
+        event_hub.unregister(client_id);
         if let Ok(shared) = state.lock() {
             shared.client_disconnected();
         }
     };
 
-    while let Some(msg) = read.next().await {
-        let msg = msg?;
-        let text = match msg {
-            Message::Text(t) => t.to_string(),
-            Message::Binary(b) => String::from_utf8(b.to_vec()).unwrap_or_default(),
-            Message::Close(_) => {
-                disconnect();
-                break;
-            }
-            Message::Ping(data) => {
-                write.send(Message::Pong(data)).await?;
-                continue;
-            }
-            Message::Pong(_) | Message::Frame(_) => continue,
-        };
+    loop {
+        tokio::select! {
+            msg = read.next() => {
+                let Some(msg) = msg else {
+                    disconnect();
+                    break;
+                };
+                let msg = msg?;
+                let text = match msg {
+                    Message::Text(t) => t.to_string(),
+                    Message::Binary(b) => String::from_utf8(b.to_vec()).unwrap_or_default(),
+                    Message::Close(_) => {
+                        disconnect();
+                        break;
+                    }
+                    Message::Ping(data) => {
+                        write.send(Message::Pong(data)).await?;
+                        continue;
+                    }
+                    Message::Pong(_) | Message::Frame(_) => continue,
+                };
 
-        if text.is_empty() {
-            continue;
+                if text.is_empty() {
+                    continue;
+                }
+
+                let response = dispatch_message(
+                    &text,
+                    &mut session,
+                    auto_approve,
+                    &state,
+                    &token_store,
+                    &subscriptions,
+                );
+                write.send(Message::Text(response.into())).await?;
+            }
+            Some(push) = event_rx.recv() => {
+                write.send(Message::Text(push.into())).await?;
+            }
         }
-
-        let response = dispatch_message(&text, &mut session, auto_approve, &state, &token_store);
-        write.send(Message::Text(response.into())).await?;
     }
 
     disconnect();
@@ -119,6 +150,7 @@ fn dispatch_message(
     auto_approve: bool,
     state: &SharedVtsState,
     token_store: &Arc<Mutex<TokenStore>>,
+    subscriptions: &Arc<Mutex<Subscriptions>>,
 ) -> String {
     let envelope: RequestEnvelope = match serde_json::from_str(text) {
         Ok(v) => v,
@@ -157,6 +189,9 @@ fn dispatch_message(
         "ExpressionStateRequest" => expression_state_request(request_id, state),
         "ExpressionActivationRequest" => {
             expression_activation_request(request_id, &envelope.data, session, state)
+        }
+        "EventSubscriptionRequest" => {
+            event_subscription_request(request_id, &envelope.data, session, subscriptions)
         }
         _ => ResponseEnvelope::error(
             request_id,
@@ -613,6 +648,64 @@ fn expression_state_request(request_id: Option<String>, state: &SharedVtsState) 
     .to_json()
 }
 
+fn event_subscription_request(
+    request_id: Option<String>,
+    data: &Value,
+    session: &Session,
+    subscriptions: &Arc<Mutex<Subscriptions>>,
+) -> String {
+    if let Err(resp) = require_auth(request_id.clone(), session) {
+        return resp;
+    }
+
+    let subscribe = data.get("subscribe").and_then(|v| v.as_bool()).unwrap_or(true);
+    let event_name = data
+        .get("eventName")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    let mut subs = subscriptions.lock().unwrap();
+    if subscribe {
+        match event_name {
+            "ModelAnimationEvent" => {
+                subs.model_animation = Some(parse_model_animation_config(data));
+            }
+            "" => {
+                return ResponseEnvelope::error(
+                    request_id,
+                    ERR_EVENT_UNKNOWN,
+                    "Unknown event type",
+                )
+                .to_json();
+            }
+            other => {
+                return ResponseEnvelope::error(
+                    request_id,
+                    ERR_EVENT_UNKNOWN,
+                    format!("Unknown event type: {other}"),
+                )
+                .to_json();
+            }
+        }
+    } else if event_name.is_empty() {
+        *subs = Subscriptions::default();
+    } else {
+        match event_name {
+            "ModelAnimationEvent" => subs.model_animation = None,
+            other => {
+                return ResponseEnvelope::error(
+                    request_id,
+                    ERR_EVENT_UNKNOWN,
+                    format!("Unknown event type: {other}"),
+                )
+                .to_json();
+            }
+        }
+    }
+
+    event_subscription_response(request_id, &subs)
+}
+
 fn expression_activation_request(
     request_id: Option<String>,
     data: &Value,
@@ -670,6 +763,7 @@ mod tests {
     use crate::model_setting::ModelSetting;
     use crate::vts::auth::TokenStore;
     use crate::vts::state::VtsSharedState;
+    use crate::vts::EventHub;
     use futures_util::{SinkExt, StreamExt};
     use tokio_tungstenite::connect_async;
 
@@ -698,7 +792,13 @@ mod tests {
         )));
         let token_store = Arc::new(Mutex::new(TokenStore::load_default()));
 
-        tokio::spawn(run_server(port, true, Arc::clone(&state), Arc::clone(&token_store)));
+        tokio::spawn(run_server(
+            port,
+            true,
+            Arc::clone(&state),
+            Arc::clone(&token_store),
+            Arc::new(EventHub::default()),
+        ));
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         let url = format!("ws://127.0.0.1:{port}");
@@ -742,5 +842,45 @@ mod tests {
         let inject_resp = read.next().await.unwrap().unwrap().into_text().unwrap();
         assert!(inject_resp.contains("InjectParameterDataResponse"));
         assert!(inject_resp.contains("\"requestID\":\"i1\""));
+    }
+
+    #[test]
+    fn event_subscription_model_animation() {
+        let session = Session {
+            authenticated: true,
+            plugin_key: Some("p|d".into()),
+        };
+        let subs = Arc::new(Mutex::new(Subscriptions::default()));
+        let json = event_subscription_request(
+            Some("sub1".into()),
+            &serde_json::json!({
+                "eventName": "ModelAnimationEvent",
+                "subscribe": true,
+                "config": {
+                    "ignoreLive2DItems": true,
+                    "ignoreIdleAnimations": true
+                }
+            }),
+            &session,
+            &subs,
+        );
+        assert!(json.contains("EventSubscriptionResponse"));
+        assert!(json.contains("ModelAnimationEvent"));
+        assert!(subs.lock().unwrap().model_animation.is_some());
+    }
+
+    #[test]
+    fn model_animation_event_shape() {
+        let json = super::super::events::model_animation_event_json(
+            "End",
+            "test.motion3.json",
+            1.5,
+            false,
+            "model-id",
+            "mao",
+        );
+        assert!(json.contains("ModelAnimationEvent"));
+        assert!(json.contains("\"animationEventType\":\"End\""));
+        assert!(json.contains("test.motion3.json"));
     }
 }

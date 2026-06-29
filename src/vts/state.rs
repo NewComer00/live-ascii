@@ -26,6 +26,19 @@ pub enum VtsMainCommand {
     SetExpression { file: String, active: bool },
 }
 
+/// Motion tracked for `ModelAnimationEvent` push to subscribed clients.
+#[derive(Debug, Clone)]
+pub struct TrackedAnimation {
+    pub queue_id: usize,
+    pub animation_name: String,
+    pub animation_length: f64,
+    pub is_idle_animation: bool,
+    pub start_emitted: bool,
+    pub end_emitted: bool,
+    /// `start_time_seconds` at the current loop cycle (idle motions only).
+    pub last_cycle_start: Option<f32>,
+}
+
 #[derive(Debug, Clone)]
 struct ActiveInjection {
     live2d_id: String,
@@ -74,6 +87,7 @@ pub struct VtsSharedState {
     injections: HashMap<String, ActiveInjection>,
     set_owners: HashMap<String, String>,
     pending_commands: VecDeque<VtsMainCommand>,
+    tracked_animations: Vec<TrackedAnimation>,
     snapshot: ModelSnapshot,
 }
 
@@ -135,6 +149,7 @@ impl VtsSharedState {
             injections: HashMap::new(),
             set_owners: HashMap::new(),
             pending_commands: VecDeque::new(),
+            tracked_animations: Vec::new(),
             snapshot: ModelSnapshot {
                 model_name: model_name.to_string(),
                 model_id: model_name.to_string(),
@@ -285,6 +300,29 @@ impl VtsSharedState {
 
     pub fn drain_commands(&mut self) -> Vec<VtsMainCommand> {
         self.pending_commands.drain(..).collect()
+    }
+
+    pub fn track_animation(
+        &mut self,
+        queue_id: usize,
+        animation_name: &str,
+        animation_length: f32,
+        is_idle_animation: bool,
+    ) {
+        self.tracked_animations.retain(|t| !t.end_emitted);
+        self.tracked_animations.push(TrackedAnimation {
+            queue_id,
+            animation_name: animation_name.to_string(),
+            animation_length: animation_length as f64,
+            is_idle_animation,
+            start_emitted: false,
+            end_emitted: false,
+            last_cycle_start: None,
+        });
+    }
+
+    pub fn tracked_animations_mut(&mut self) -> &mut Vec<TrackedAnimation> {
+        &mut self.tracked_animations
     }
 
     pub fn find_hotkey(&self, hotkey_id: &str) -> Option<&HotkeyInfo> {

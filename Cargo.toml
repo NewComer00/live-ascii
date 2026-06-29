@@ -24,13 +24,5 @@ tokio-tungstenite = "0.26"
 uuid = { version = "1", features = ["v4"] }
 futures-util = "0.3"
 
-[features] 
-default = ["debug"]
-debug = ["tracker_debug"]
-tracker_debug = []
-
-[profile.release]
-debug = true
-
 [dev-dependencies]
 vtubestudio = "0.9"
